@@ -12,53 +12,38 @@ import (
 )
 
 type lineReader struct {
-	r    bufio.Scanner
+	r    *bufio.Reader
 	line []byte
 }
 
 func (r *lineReader) Read(buf []byte) (int, error) {
 	for len(r.line) == 0 {
-		if !r.r.Scan() {
-			if err := r.r.Err(); err != nil {
-				return 0, err
-			}
-			return 0, io.EOF
+		line, err := r.r.ReadBytes('\n')
+		if len(line) == 0 {
+			return 0, err
 		}
-		line := r.r.Bytes()
 		if bytes.HasPrefix(line, []byte("-")) {
 			continue
 		}
-		r.line = line
+		r.line = bytes.TrimSuffix(line, []byte("\n"))
 	}
 	n := copy(buf, r.line)
 	r.line = r.line[n:]
 	return n, nil
 }
 
-type PasswordCache map[[SaltSize]byte][]byte
-
-func decryptBinary(w io.Writer, r io.Reader, password string, pwCache PasswordCache) error {
-	header := make([]byte, 1+SaltSize)
+func decryptBinary(w io.Writer, r io.Reader, password string) error {
+	header := make([]byte, 1)
 	if _, err := io.ReadFull(r, header); err != nil {
 		return err
 	}
-	salt := header[1:]
-	key, ok := pwCache[[SaltSize]byte(salt)]
-	if !ok {
-		var err error
-		key, err = HashPassword(password, salt)
-		if err != nil {
-			return err
-		}
-		pwCache[[SaltSize]byte(salt)] = key
-	}
-	reader := newDecryptingReader(r, key)
+	reader := newDecryptingReader(r, password)
 	_, err := io.Copy(w, reader)
 	return err
 }
 
-func Decrypt(w io.Writer, r io.Reader, password string, pwCache PasswordCache) error {
-	bufReader := bufio.NewReaderSize(r, 1)
+func Decrypt(w io.Writer, r io.Reader, password string) error {
+	bufReader := bufio.NewReaderSize(r, 81)
 	b, err := bufReader.Peek(1)
 	if err != nil {
 		if err == io.EOF {
@@ -67,15 +52,15 @@ func Decrypt(w io.Writer, r io.Reader, password string, pwCache PasswordCache) e
 		return err
 	}
 	if b[0] == 0 {
-		return decryptBinary(w, bufReader, password, pwCache)
+		return decryptBinary(w, bufReader, password)
 	}
 	if b[0] != '-' {
 		return errors.New("invalid input")
 	}
-	return decryptBinary(w, base64.NewDecoder(base64.StdEncoding, &lineReader{r: *bufio.NewScanner(bufReader)}), password, pwCache)
+	return decryptBinary(w, base64.NewDecoder(base64.StdEncoding, &lineReader{r: bufReader}), password)
 }
 
-func DecryptFile(fileName, password string, pwCache PasswordCache) (err error) {
+func DecryptFile(fileName string, password string) (err error) {
 	var outFileName string
 	if name, ok := strings.CutSuffix(fileName, ".enc"); ok {
 		outFileName = name
@@ -99,7 +84,7 @@ func DecryptFile(fileName, password string, pwCache PasswordCache) (err error) {
 			os.Remove(fOut.Name())
 		}
 	}()
-	if err := Decrypt(fOut, fIn, password, pwCache); err != nil {
+	if err := Decrypt(fOut, fIn, password); err != nil {
 		return err
 	}
 	return fOut.Close()

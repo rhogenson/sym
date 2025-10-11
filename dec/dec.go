@@ -28,12 +28,11 @@ func dec() error {
 		}
 		password = string(pw)
 	}
-	pwCache := make(sym.PasswordCache)
 	if len(args) == 0 {
-		return sym.Decrypt(os.Stdout, os.Stdin, password, pwCache)
+		return sym.Decrypt(os.Stdout, os.Stdin, password)
 	}
 	for _, fileName := range args {
-		if err := sym.DecryptFile(fileName, password, pwCache); err != nil {
+		if err := sym.DecryptFile(fileName, password); err != nil {
 			return err
 		}
 	}

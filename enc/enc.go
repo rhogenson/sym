@@ -49,20 +49,14 @@ func enc() error {
 		}
 		password = string(pw)
 	}
-	salt := make([]byte, sym.SaltSize)
-	rand.Read(salt)
-	key, err := sym.HashPassword(password, salt)
-	if err != nil {
-		return err
-	}
 	if len(args) == 0 {
 		if *asciiOutput {
-			return sym.EncryptBase64(os.Stdout, os.Stdin, key, salt, 0)
+			return sym.EncryptBase64(os.Stdout, os.Stdin, password)
 		}
-		return sym.Encrypt(os.Stdout, os.Stdin, key, salt, 0)
+		return sym.Encrypt(os.Stdout, os.Stdin, password)
 	}
-	for i, fileName := range args {
-		if err := sym.EncryptFile(fileName, key, salt, i, *asciiOutput); err != nil {
+	for _, fileName := range args {
+		if err := sym.EncryptFile(fileName, password, *asciiOutput); err != nil {
 			return err
 		}
 	}

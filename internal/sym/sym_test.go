@@ -2,30 +2,15 @@ package sym
 
 import (
 	"bytes"
-	"encoding/hex"
 	"os"
 	"path/filepath"
 	"testing"
 )
 
-func mustHex(t *testing.T, s string) []byte {
-	t.Helper()
-	b, err := hex.DecodeString(s)
-	if err != nil {
-		t.Fatalf("Bad hex %q: %s", s, err)
-	}
-	return b
-}
-
 func TestEncryptDecrypt(t *testing.T) {
 	t.Parallel()
 
 	const password = "karp cache tidal mars fed rajah uses graze pobox flew"
-	salt := mustHex(t, "9aa7d8bb6d19f794162f4062c789b230")
-	key, err := HashPassword(password, salt)
-	if err != nil {
-		t.Fatalf("HashPassword failed: %s", err)
-	}
 	buf := make([]byte, 10*1024*1024)
 	for i := range buf {
 		buf[i] = byte(i)
@@ -47,14 +32,14 @@ func TestEncryptDecrypt(t *testing.T) {
 			if err := os.WriteFile(fileName, buf, 0600); err != nil {
 				t.Fatalf("Failed to write test file: %s", err)
 			}
-			if err := EncryptFile(fileName, key, salt, 0, tc.ascii); err != nil {
+			if err := EncryptFile(fileName, password, tc.ascii); err != nil {
 				t.Fatalf("EncryptFile failed: %s", err)
 			}
 			ext := ".enc"
 			if tc.ascii {
 				ext = ".enc.txt"
 			}
-			if err := DecryptFile(fileName+ext, password, make(PasswordCache)); err != nil {
+			if err := DecryptFile(fileName+ext, password); err != nil {
 				t.Fatalf("DecryptFile failed: %s", err)
 			}
 			gotContents, err := os.ReadFile(fileName)

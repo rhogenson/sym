@@ -5,31 +5,33 @@ import (
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
-	"encoding/binary"
-	"errors"
+	"crypto/rand"
 	"io"
-	"math"
 )
 
 const (
-	nonceSize       = 12
-	aeadOverhead    = 16
-	noncePrefixSize = nonceSize - 8
+	nonceSize    = 12
+	aeadOverhead = 16
 
 	segmentSize          = 4 * 1024 * 1024
 	encryptedSegmentSize = segmentSize + aeadOverhead
+
+	saltSize = 16
 )
 
 type segmentEncrypter struct {
-	key         []byte
-	noncePrefix [noncePrefixSize]byte
+	password string
 
-	aead cipher.AEAD
-	i    uint64
+	aead  cipher.AEAD
+	nonce [nonceSize]byte
 }
 
-func (se *segmentEncrypter) initialize() error {
-	block, err := aes.NewCipher(se.key)
+func (se *segmentEncrypter) initialize(salt []byte) error {
+	key, err := hashPassword(se.password, salt)
+	if err != nil {
+		return err
+	}
+	block, err := aes.NewCipher(key)
 	if err != nil {
 		return err
 	}
@@ -37,36 +39,36 @@ func (se *segmentEncrypter) initialize() error {
 	return err
 }
 
-func (se *segmentEncrypter) nonce(lastSegment bool) ([]byte, []byte, error) {
-	if se.i == math.MaxUint64 {
-		return nil, nil, errors.New("counter overflowed")
+func (se *segmentEncrypter) ad(lastSegment bool) ([]byte, error) {
+	// Increment counter
+	for i := range se.nonce {
+		se.nonce[i]++
+		if se.nonce[i] != 0 {
+			break
+		}
 	}
-	nonce := make([]byte, nonceSize)
-	copy(nonce, se.noncePrefix[:])
-	binary.BigEndian.PutUint64(nonce[noncePrefixSize:], se.i)
-	ad := make([]byte, 9)
-	binary.BigEndian.PutUint64(ad, se.i)
+	ad := make([]byte, len(se.nonce)+1)
+	copy(ad, se.nonce[:])
 	if lastSegment {
-		ad[8] = 1
+		ad[len(ad)-1] = 1
 	}
-	se.i++
-	return nonce, ad, nil
+	return ad, nil
 }
 
 func (se *segmentEncrypter) encrypt(out, buf []byte, lastSegment bool) ([]byte, error) {
-	nonce, ad, err := se.nonce(lastSegment)
+	ad, err := se.ad(lastSegment)
 	if err != nil {
 		return nil, err
 	}
-	return se.aead.Seal(out, nonce, buf, ad), nil
+	return se.aead.Seal(out, se.nonce[:], buf, ad), nil
 }
 
 func (se *segmentEncrypter) decrypt(out, buf []byte, lastSegment bool) ([]byte, error) {
-	nonce, ad, err := se.nonce(lastSegment)
+	ad, err := se.ad(lastSegment)
 	if err != nil {
 		return nil, err
 	}
-	return se.aead.Open(out, nonce, buf, ad)
+	return se.aead.Open(out, se.nonce[:], buf, ad)
 }
 
 type encryptingWriter struct {
@@ -76,12 +78,11 @@ type encryptingWriter struct {
 	initialized bool
 }
 
-func newEncryptingWriter(w io.Writer, key []byte, noncePrefix [noncePrefixSize]byte) *encryptingWriter {
+func newEncryptingWriter(w io.Writer, password string) *encryptingWriter {
 	return &encryptingWriter{
 		w: w,
 		encrypter: segmentEncrypter{
-			key:         key,
-			noncePrefix: noncePrefix,
+			password: password,
 		},
 	}
 }
@@ -90,10 +91,12 @@ func (w *encryptingWriter) initialize() error {
 	if w.initialized {
 		return nil
 	}
-	if err := w.encrypter.initialize(); err != nil {
+	header := make([]byte, saltSize)
+	rand.Read(header)
+	if err := w.encrypter.initialize(header); err != nil {
 		return err
 	}
-	if _, err := w.w.Write(w.encrypter.noncePrefix[:]); err != nil {
+	if _, err := w.w.Write(header); err != nil {
 		return err
 	}
 	w.buf = make([]byte, 0, encryptedSegmentSize)
@@ -146,11 +149,11 @@ type decryptingReader struct {
 	initialized bool
 }
 
-func newDecryptingReader(r io.Reader, key []byte) *decryptingReader {
+func newDecryptingReader(r io.Reader, password string) *decryptingReader {
 	return &decryptingReader{
 		r: bufio.NewReaderSize(r, 1),
 		decrypter: segmentEncrypter{
-			key: key,
+			password: password,
 		},
 	}
 }
@@ -159,10 +162,11 @@ func (r *decryptingReader) initialize() error {
 	if r.initialized {
 		return nil
 	}
-	if _, err := io.ReadFull(r.r, r.decrypter.noncePrefix[:]); err != nil {
+	header := make([]byte, saltSize)
+	if _, err := io.ReadFull(r.r, header); err != nil {
 		return err
 	}
-	if err := r.decrypter.initialize(); err != nil {
+	if err := r.decrypter.initialize(header); err != nil {
 		return err
 	}
 	r.buf = *bytes.NewBuffer(make([]byte, 0, encryptedSegmentSize))
