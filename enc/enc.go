@@ -53,7 +53,7 @@ func enc() error {
 		if *asciiOutput {
 			return sym.EncryptBase64(os.Stdout, os.Stdin, password)
 		}
-		return sym.Encrypt(os.Stdout, os.Stdin, password)
+		return sym.EncryptBinary(os.Stdout, os.Stdin, password)
 	}
 	for _, fileName := range args {
 		if err := sym.EncryptFile(fileName, password, *asciiOutput); err != nil {

@@ -33,8 +33,8 @@ func (w *newlineWriter) Write(buf []byte) (int, error) {
 	return nn, nil
 }
 
-func Encrypt(w io.Writer, r io.Reader, password string) error {
-	if _, err := w.Write([]byte{0}); err != nil {
+func EncryptBinary(w io.Writer, r io.Reader, password string) error {
+	if _, err := io.WriteString(w, magic); err != nil {
 		return err
 	}
 	writer := newEncryptingWriter(w, password)
@@ -52,7 +52,11 @@ func EncryptBase64(w io.Writer, r io.Reader, password string) error {
 		return err
 	}
 	base64Writer := base64.NewEncoder(base64.StdEncoding, &newlineWriter{w: bufWriter})
-	if err := Encrypt(base64Writer, r, password); err != nil {
+	encryptingWriter := newEncryptingWriter(base64Writer, password)
+	if _, err := io.Copy(encryptingWriter, r); err != nil {
+		return err
+	}
+	if err := encryptingWriter.Close(); err != nil {
 		return err
 	}
 	if err := base64Writer.Close(); err != nil {
@@ -87,7 +91,7 @@ func EncryptFile(fileName string, password string, asciiOutput bool) (err error)
 	if asciiOutput {
 		err = EncryptBase64(fOut, f, password)
 	} else {
-		err = Encrypt(fOut, f, password)
+		err = EncryptBinary(fOut, f, password)
 	}
 	if err != nil {
 		return err

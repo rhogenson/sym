@@ -33,12 +33,14 @@ func (r *lineReader) Read(buf []byte) (int, error) {
 }
 
 func decryptBinary(w io.Writer, r io.Reader, password string) error {
-	header := make([]byte, 1)
+	header := make([]byte, len(magic))
 	if _, err := io.ReadFull(r, header); err != nil {
 		return err
 	}
-	reader := newDecryptingReader(r, password)
-	_, err := io.Copy(w, reader)
+	if !bytes.Equal(header, []byte(magic)) {
+		return fmt.Errorf("bad file format")
+	}
+	_, err := io.Copy(w, newDecryptingReader(r, password))
 	return err
 }
 
@@ -51,13 +53,14 @@ func Decrypt(w io.Writer, r io.Reader, password string) error {
 		}
 		return err
 	}
-	if b[0] == 0 {
+	if b[0] == 0x80 {
 		return decryptBinary(w, bufReader, password)
 	}
 	if b[0] != '-' {
 		return errors.New("invalid input")
 	}
-	return decryptBinary(w, base64.NewDecoder(base64.StdEncoding, &lineReader{r: bufReader}), password)
+	_, err = io.Copy(w, newDecryptingReader(base64.NewDecoder(base64.StdEncoding, &lineReader{r: bufReader}), password))
+	return err
 }
 
 func DecryptFile(fileName string, password string) (err error) {

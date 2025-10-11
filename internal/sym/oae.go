@@ -6,6 +6,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"errors"
 	"io"
 )
 
@@ -13,10 +14,10 @@ const (
 	nonceSize    = 12
 	aeadOverhead = 16
 
-	segmentSize          = 4 * 1024 * 1024
-	encryptedSegmentSize = segmentSize + aeadOverhead
+	encryptedSegmentSize = 1024 * 1024
+	plaintextSegmentSize = encryptedSegmentSize - aeadOverhead
 
-	saltSize = 16
+	saltSize = 32
 )
 
 type segmentEncrypter struct {
@@ -41,7 +42,10 @@ func (se *segmentEncrypter) initialize(salt []byte) error {
 
 func (se *segmentEncrypter) ad(lastSegment bool) ([]byte, error) {
 	// Increment counter
-	for i := range se.nonce {
+	for i := 0; ; i++ {
+		if i == len(se.nonce) {
+			return nil, errors.New("counter overflowed")
+		}
 		se.nonce[i]++
 		if se.nonce[i] != 0 {
 			break
@@ -122,12 +126,12 @@ func (w *encryptingWriter) Write(buf []byte) (int, error) {
 	}
 	nn := 0
 	for len(buf) > 0 {
-		if len(w.buf) == segmentSize {
+		if len(w.buf) == plaintextSegmentSize {
 			if err := w.writeBuf(false); err != nil {
 				return nn, err
 			}
 		}
-		n := copy(w.buf[len(w.buf):segmentSize], buf)
+		n := copy(w.buf[len(w.buf):plaintextSegmentSize], buf)
 		nn += n
 		w.buf = w.buf[:len(w.buf)+n]
 		buf = buf[n:]
