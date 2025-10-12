@@ -63,7 +63,20 @@ func Decrypt(w io.Writer, r io.Reader, password string) error {
 	return err
 }
 
-func DecryptFile(fileName string, password string) (err error) {
+type decryptOptions struct {
+	force bool
+}
+
+type DecryptFileOption interface {
+	decryptOpt(*decryptOptions)
+}
+
+func DecryptFile(fileName string, password string, options ...DecryptFileOption) (err error) {
+	opts := new(decryptOptions)
+	for _, o := range options {
+		o.decryptOpt(opts)
+	}
+
 	var outFileName string
 	if name, ok := strings.CutSuffix(fileName, ".enc"); ok {
 		outFileName = name
@@ -77,7 +90,13 @@ func DecryptFile(fileName string, password string) (err error) {
 		return err
 	}
 	defer fIn.Close()
-	fOut, err := os.Create(outFileName)
+	fileOpts := os.O_CREATE | os.O_WRONLY
+	if opts.force {
+		fileOpts |= os.O_TRUNC
+	} else {
+		fileOpts |= os.O_EXCL
+	}
+	fOut, err := os.OpenFile(outFileName, fileOpts, 0644)
 	if err != nil {
 		return err
 	}
@@ -88,7 +107,7 @@ func DecryptFile(fileName string, password string) (err error) {
 		}
 	}()
 	if err := Decrypt(fOut, fIn, password); err != nil {
-		return err
+		return fmt.Errorf("decrypt %q: %s", fileName, err)
 	}
 	return fOut.Close()
 }

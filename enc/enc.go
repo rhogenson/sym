@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -13,24 +14,37 @@ import (
 	"roseh.moe/pkg/wordlist"
 )
 
-var (
-	generatePassword = flag.Bool("g", false, "generate a secure password automatically (password will be printed to stderr)")
-	passwordFlag     = flag.String("p", "", "use the specified password; if not provided, enc will prompt for a password")
-	asciiOutput      = flag.Bool("a", false, "Output in base64, default is binary output")
-)
+type options struct {
+	generatePassword bool
+	password         string
+	asciiOutput      bool
+	force            bool
 
-func enc() error {
-	if *generatePassword && *passwordFlag != "" {
+	passwordOut io.Writer
+	stdin       io.Reader
+	stdout      io.Writer
+}
+
+func (o *options) enc(args ...string) error {
+	if o.passwordOut == nil {
+		o.passwordOut = os.Stderr
+	}
+	if o.stdin == nil {
+		o.stdin = os.Stdin
+	}
+	if o.stdout == nil {
+		o.stdout = os.Stdout
+	}
+	if o.generatePassword && o.password != "" {
 		return fmt.Errorf("-g and -p cannot be used together")
 	}
-	args := flag.Args()
-	if len(args) == 0 && !*generatePassword && *passwordFlag == "" {
+	if len(args) == 0 && !o.generatePassword && o.password == "" {
 		return fmt.Errorf("must use -g or -p when reading from stdin")
 	}
 	var password string
-	if *passwordFlag != "" {
-		password = *passwordFlag
-	} else if *generatePassword {
+	if o.password != "" {
+		password = o.password
+	} else if o.generatePassword {
 		const nWords = 10
 		buf := make([]byte, 2*nWords)
 		rand.Read(buf)
@@ -39,7 +53,9 @@ func enc() error {
 			words[i] = wordlist.Words[binary.NativeEndian.Uint16(buf[2*i:])&0x1fff]
 		}
 		password = strings.Join(words, " ")
-		fmt.Fprintf(os.Stderr, "Your password: %s\n", password)
+		fmt.Fprint(os.Stderr, "Your password: ")
+		fmt.Fprint(o.passwordOut, password)
+		fmt.Fprintln(os.Stderr)
 	} else {
 		fmt.Fprint(os.Stderr, "Enter password: ")
 		pw, err := term.ReadPassword(int(os.Stdin.Fd()))
@@ -50,13 +66,13 @@ func enc() error {
 		password = string(pw)
 	}
 	if len(args) == 0 {
-		if *asciiOutput {
-			return sym.EncryptBase64(os.Stdout, os.Stdin, password)
+		if o.asciiOutput {
+			return sym.EncryptBase64(o.stdout, o.stdin, password)
 		}
-		return sym.EncryptBinary(os.Stdout, os.Stdin, password)
+		return sym.EncryptBinary(o.stdout, o.stdin, password)
 	}
 	for _, fileName := range args {
-		if err := sym.EncryptFile(fileName, password, *asciiOutput); err != nil {
+		if err := sym.EncryptFile(fileName, password, sym.WithASCIIOutput(o.asciiOutput), sym.Force(o.force)); err != nil {
 			return err
 		}
 	}
@@ -64,8 +80,13 @@ func enc() error {
 }
 
 func main() {
+	o := new(options)
+	flag.BoolVar(&o.generatePassword, "g", false, "generate a secure password automatically (password will be printed to stderr)")
+	flag.StringVar(&o.password, "p", "", "use the specified password; if not provided, enc will prompt for a password")
+	flag.BoolVar(&o.asciiOutput, "a", false, "output in base64, default is binary output")
+	flag.BoolVar(&o.force, "f", false, "overwrite output files even if they already exist")
 	flag.Parse()
-	if err := enc(); err != nil {
+	if err := o.enc(flag.Args()...); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

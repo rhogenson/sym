@@ -183,9 +183,6 @@ func (r *decryptingReader) fillBuf() error {
 	buf := r.buf.AvailableBuffer()[:encryptedSegmentSize]
 	n, err := io.ReadFull(r.r, buf)
 	if n == 0 {
-		if err == io.ErrUnexpectedEOF {
-			return io.EOF
-		}
 		return err
 	}
 	buf = buf[:n]

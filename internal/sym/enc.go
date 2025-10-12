@@ -3,6 +3,7 @@ package sym
 import (
 	"bufio"
 	"encoding/base64"
+	"fmt"
 	"io"
 	"os"
 )
@@ -68,17 +69,47 @@ func EncryptBase64(w io.Writer, r io.Reader, password string) error {
 	return bufWriter.Flush()
 }
 
-func EncryptFile(fileName string, password string, asciiOutput bool) (err error) {
+type encryptOptions struct {
+	asciiOutput bool
+	force       bool
+}
+
+type EncryptFileOption interface {
+	encryptOpt(*encryptOptions)
+}
+
+type encryptFileOptionFunc func(*encryptOptions)
+
+func (f encryptFileOptionFunc) encryptOpt(opts *encryptOptions) { f(opts) }
+
+func WithASCIIOutput(asciiOutput bool) EncryptFileOption {
+	return encryptFileOptionFunc(func(opts *encryptOptions) {
+		opts.asciiOutput = asciiOutput
+	})
+}
+
+func EncryptFile(fileName string, password string, options ...EncryptFileOption) (err error) {
+	opts := new(encryptOptions)
+	for _, o := range options {
+		o.encryptOpt(opts)
+	}
+
 	f, err := os.Open(fileName)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
 	ext := ".enc"
-	if asciiOutput {
+	if opts.asciiOutput {
 		ext = ".enc.txt"
 	}
-	fOut, err := os.Create(fileName + ext)
+	fileOpts := os.O_CREATE | os.O_WRONLY
+	if opts.force {
+		fileOpts |= os.O_TRUNC
+	} else {
+		fileOpts |= os.O_EXCL
+	}
+	fOut, err := os.OpenFile(fileName+ext, fileOpts, 0644)
 	if err != nil {
 		return err
 	}
@@ -88,13 +119,13 @@ func EncryptFile(fileName string, password string, asciiOutput bool) (err error)
 			os.Remove(fOut.Name())
 		}
 	}()
-	if asciiOutput {
+	if opts.asciiOutput {
 		err = EncryptBase64(fOut, f, password)
 	} else {
 		err = EncryptBinary(fOut, f, password)
 	}
 	if err != nil {
-		return err
+		return fmt.Errorf("encrypt %q: %s", fileName, err)
 	}
 	return fOut.Close()
 }
