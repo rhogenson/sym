@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -44,7 +45,7 @@ func decryptBinary(w io.Writer, r io.Reader, password string) error {
 	return err
 }
 
-func Decrypt(w io.Writer, r io.Reader, password string) error {
+func decrypt(w io.Writer, r io.Reader, password string) error {
 	bufReader := bufio.NewReaderSize(r, 81)
 	b, err := bufReader.Peek(1)
 	if err != nil {
@@ -63,20 +64,25 @@ func Decrypt(w io.Writer, r io.Reader, password string) error {
 	return err
 }
 
-type decryptOptions struct {
-	force bool
+type DecryptOptions struct {
+	password string
+	force    bool
+
+	stdin  io.Reader
+	stdout io.Writer
 }
 
-type DecryptFileOption interface {
-	decryptOpt(*decryptOptions)
+var DefaultDecryptOptions = DecryptOptions{
+	stdin:  os.Stdin,
+	stdout: os.Stdout,
 }
 
-func DecryptFile(fileName string, password string, options ...DecryptFileOption) (err error) {
-	opts := new(decryptOptions)
-	for _, o := range options {
-		o.decryptOpt(opts)
-	}
+func (o *DecryptOptions) RegisterFlags(fs *flag.FlagSet) {
+	fs.StringVar(&o.password, "p", "", "use the specified password; if not provided, dec will prompt for a password")
+	fs.BoolVar(&o.force, "f", false, "overwrite output files even if they already exist")
+}
 
+func (o *DecryptOptions) decryptFile(fileName string, password string) (err error) {
 	var outFileName string
 	if name, ok := strings.CutSuffix(fileName, ".enc"); ok {
 		outFileName = name
@@ -91,7 +97,7 @@ func DecryptFile(fileName string, password string, options ...DecryptFileOption)
 	}
 	defer fIn.Close()
 	fileOpts := os.O_CREATE | os.O_WRONLY
-	if opts.force {
+	if o.force {
 		fileOpts |= os.O_TRUNC
 	} else {
 		fileOpts |= os.O_EXCL
@@ -106,8 +112,33 @@ func DecryptFile(fileName string, password string, options ...DecryptFileOption)
 			os.Remove(fOut.Name())
 		}
 	}()
-	if err := Decrypt(fOut, fIn, password); err != nil {
+	if err := decrypt(fOut, fIn, password); err != nil {
 		return fmt.Errorf("decrypt %q: %s", fileName, err)
 	}
 	return fOut.Close()
+}
+
+func (o *DecryptOptions) Run(args ...string) error {
+	if len(args) == 0 && o.password == "" {
+		return fmt.Errorf("-p is required when reading from stdin")
+	}
+	var password string
+	if o.password != "" {
+		password = o.password
+	} else {
+		var err error
+		password, err = readPassword()
+		if err != nil {
+			return err
+		}
+	}
+	if len(args) == 0 {
+		return decrypt(o.stdout, o.stdin, password)
+	}
+	for _, fileName := range args {
+		if err := o.decryptFile(fileName, password); err != nil {
+			return err
+		}
+	}
+	return nil
 }

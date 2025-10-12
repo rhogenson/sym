@@ -1,0 +1,195 @@
+package sym
+
+import (
+	"bytes"
+	"flag"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+)
+
+func TestDecryptFile_Force(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		desc    string
+		force   bool
+		wantErr bool
+	}{{
+		desc:    "OutputExists",
+		force:   false,
+		wantErr: true,
+	}, {
+		desc:    "Force",
+		force:   true,
+		wantErr: false,
+	}} {
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			const password = "asdf"
+			fileName := filepath.Join(t.TempDir(), "file")
+			mustWriteFile(t, fileName, []byte("test file content"))
+			if err := DefaultEncryptOptions.encryptFile(fileName, password); err != nil {
+				t.Fatalf("Failed to encrypt file: %s", err)
+			}
+			decOpts := DefaultDecryptOptions
+			decOpts.force = tc.force
+			err := decOpts.decryptFile(fileName+".enc", password)
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Errorf("decryptFile(force=%t) returned returned error %v when output file exists, want error? %t", tc.force, err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestDecrypt_BadFileFormat(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		desc        string
+		fileContent []byte
+	}{{
+		desc:        "Empty",
+		fileContent: nil,
+	}, {
+		desc:        "Short",
+		fileContent: []byte{0x80},
+	}, {
+		desc:        "BadHeader",
+		fileContent: []byte{0x80, 'a', 's', 'd', 'f'},
+	}, {
+		desc:        "BadFormat",
+		fileContent: []byte("bad file format"),
+	}, {
+		desc:        "BadContent",
+		fileContent: []byte("\x80symasdfasdf"),
+	}, {
+		desc:        "BadContentLong",
+		fileContent: slices.Concat([]byte("\x80sym"), bytes.Repeat([]byte("asdf"), 100)),
+	}} {
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			fileName := filepath.Join(t.TempDir(), "file")
+			mustWriteFile(t, fileName, tc.fileContent)
+			err := DefaultDecryptOptions.decryptFile(fileName, "asdf")
+			if err == nil {
+				t.Errorf("DecryptFile succeeded for incorrect file format, want error")
+			}
+		})
+	}
+}
+
+func TestDecryptFile_WeirdName(t *testing.T) {
+	t.Parallel()
+
+	const password = "asdf"
+	fileContent := []byte("file content")
+	fileName := filepath.Join(t.TempDir(), "file")
+	mustWriteFile(t, fileName, fileContent)
+	if err := DefaultEncryptOptions.encryptFile(fileName, password); err != nil {
+		t.Fatalf("EncryptFile failed: %s", err)
+	}
+	mustRename(t, fileName+".enc", fileName+".encrypted")
+	if err := DefaultDecryptOptions.decryptFile(fileName+".encrypted", password); err != nil {
+		t.Fatalf("DecryptFile failed: %s", err)
+	}
+	gotContents := mustReadFile(t, fileName+".encrypted.dec")
+	if !bytes.Equal(gotContents, fileContent) {
+		t.Errorf("contents differ")
+	}
+}
+
+func TestDecryptFile_NotFound(t *testing.T) {
+	t.Parallel()
+
+	err := DefaultDecryptOptions.decryptFile("my-nonexistent-file.txt", "asdf")
+	if err == nil {
+		t.Fatal("DecryptFile succeeded for nonexistent file, want error")
+	}
+}
+
+func TestDecryptOptions_RegisterFlags(t *testing.T) {
+	t.Parallel()
+
+	var o DecryptOptions
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	o.RegisterFlags(fs)
+	const cmd = "-p asdf -f"
+	fs.Parse(strings.Split(cmd, " "))
+	want := DecryptOptions{
+		password: "asdf",
+		force:    true,
+	}
+	if o != want {
+		t.Errorf("Command line %q parsed incorrect DecryptOptions, got %+v, want %+v", cmd, o, want)
+	}
+}
+
+func TestDecryptOptions_Run(t *testing.T) {
+	t.Parallel()
+
+	const password = "asdf"
+	fileContent := []byte("test file content")
+	fileName := filepath.Join(t.TempDir(), "file")
+	mustWriteFile(t, fileName, fileContent)
+	if err := DefaultEncryptOptions.encryptFile(fileName, password); err != nil {
+		t.Errorf("EncryptFile failed: %s", err)
+	}
+	mustRemove(t, fileName)
+	opts := DefaultDecryptOptions
+	opts.password = password
+	err := opts.Run(fileName + ".enc")
+	if err != nil {
+		t.Errorf("dec failed: %s", err)
+	}
+	gotFileContents := mustReadFile(t, fileName)
+	if !bytes.Equal(gotFileContents, fileContent) {
+		t.Errorf("Run returned incorrect contents %q, want %q", gotFileContents, fileContent)
+	}
+}
+
+func TestDecryptOptions_Run_UsageError(t *testing.T) {
+	t.Parallel()
+
+	err := DefaultDecryptOptions.Run()
+	if err == nil {
+		t.Errorf("Run without -p when reading from stdin, want error")
+	}
+}
+
+func TestDecryptOptions_Run_NotFound(t *testing.T) {
+	t.Parallel()
+
+	opts := DefaultDecryptOptions
+	opts.password = "asdf"
+	err := opts.Run("my-nonexistent-file-name.txt")
+	if err == nil {
+		t.Errorf("Run succeeded with nonexistent file, want error")
+	}
+}
+
+func TestDecryptOptions_Run_Stdin(t *testing.T) {
+	t.Parallel()
+
+	const password = "asdf"
+	content := []byte("test contents")
+	encrypted := new(bytes.Buffer)
+	if err := encryptBinary(encrypted, bytes.NewReader(content), password); err != nil {
+		t.Fatalf("Failed to encrypt: %s", err)
+	}
+	gotContentBuf := new(bytes.Buffer)
+	opts := DefaultDecryptOptions
+	opts.password = password
+	opts.stdin = bytes.NewReader(encrypted.Bytes())
+	opts.stdout = gotContentBuf
+	if err := opts.Run(); err != nil {
+		t.Fatalf("Run failed: %s", err)
+	}
+	gotContent := gotContentBuf.Bytes()
+	if !bytes.Equal(gotContent, content) {
+		t.Errorf("dec returned incorrect contents %q, want %q", gotContent, content)
+	}
+}
