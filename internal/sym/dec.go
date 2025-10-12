@@ -104,6 +104,9 @@ func (o *DecryptOptions) decryptFile(fileName string, password string) (err erro
 	}
 	fOut, err := os.OpenFile(outFileName, fileOpts, 0644)
 	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return fmt.Errorf("output file %q exists (use -f to overwrite)", outFileName)
+		}
 		return err
 	}
 	defer func() {

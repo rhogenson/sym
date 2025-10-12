@@ -45,7 +45,22 @@ func TestEncryptFile_NotFound(t *testing.T) {
 
 	err := DefaultEncryptOptions.encryptFile("my-nonexistent-file.txt", "asdf")
 	if err == nil {
-		t.Fatal("EncryptFile succeeded for nonexistent file, want error")
+		t.Fatal("encryptFile succeeded for nonexistent file, want error")
+	}
+}
+
+func TestEncryptFile_NoPermission(t *testing.T) {
+	t.Parallel()
+
+	fileName := filepath.Join(t.TempDir(), "file")
+	mustWriteFile(t, fileName, []byte("test file content"))
+	mustWriteFile(t, fileName+".enc", nil)
+	mustChmod(t, fileName+".enc", 0400)
+	opts := DefaultEncryptOptions
+	opts.force = true
+	err := opts.encryptFile(fileName, "asdf")
+	if err == nil {
+		t.Fatal("encryptFile succeeded for unwritable file, want error")
 	}
 }
 

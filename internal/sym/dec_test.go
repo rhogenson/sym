@@ -107,7 +107,22 @@ func TestDecryptFile_NotFound(t *testing.T) {
 
 	err := DefaultDecryptOptions.decryptFile("my-nonexistent-file.txt", "asdf")
 	if err == nil {
-		t.Fatal("DecryptFile succeeded for nonexistent file, want error")
+		t.Fatal("decryptFile succeeded for nonexistent file, want error")
+	}
+}
+
+func TestDecryptFile_NoPermission(t *testing.T) {
+	t.Parallel()
+
+	fileName := filepath.Join(t.TempDir(), "file.enc")
+	mustWriteFile(t, fileName, []byte("test file content"))
+	mustWriteFile(t, strings.TrimSuffix(fileName, ".enc"), nil)
+	mustChmod(t, strings.TrimSuffix(fileName, ".enc"), 0400)
+	opts := DefaultDecryptOptions
+	opts.force = true
+	err := opts.decryptFile(fileName, "asdf")
+	if err == nil {
+		t.Fatal("decryptFile succeeded for unwritable file, want error")
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -117,6 +118,9 @@ func (o *EncryptOptions) encryptFile(fileName string, password string) (err erro
 	}
 	fOut, err := os.OpenFile(fileName+ext, fileOpts, 0644)
 	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return fmt.Errorf("output file %q exists (use -f to overwrite)", fileName+ext)
+		}
 		return err
 	}
 	defer func() {

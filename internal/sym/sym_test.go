@@ -37,6 +37,13 @@ func mustRemove(t *testing.T, path string) {
 	}
 }
 
+func mustChmod(t *testing.T, path string, mod os.FileMode) {
+	t.Helper()
+	if err := os.Chmod(path, mod); err != nil {
+		t.Fatalf("Failed to chmod: %s", err)
+	}
+}
+
 func TestEncryptDecrypt(t *testing.T) {
 	t.Parallel()
 
