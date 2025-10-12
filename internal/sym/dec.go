@@ -64,22 +64,28 @@ func decrypt(w io.Writer, r io.Reader, password string) error {
 	return err
 }
 
-type DecryptOptions struct {
+type decryptFlags struct {
 	password string
 	force    bool
+}
 
-	stdin  io.Reader
-	stdout io.Writer
+func (f *decryptFlags) RegisterFlags(fs *flag.FlagSet) {
+	fs.StringVar(&f.password, "p", "", "use the specified password; if not provided, dec will prompt for a password")
+	fs.BoolVar(&f.force, "f", false, "overwrite output files even if they already exist")
+}
+
+type DecryptOptions struct {
+	decryptFlags
+
+	passwordIn func() (string, error)
+	stdin      io.Reader
+	stdout     io.Writer
 }
 
 var DefaultDecryptOptions = DecryptOptions{
-	stdin:  os.Stdin,
-	stdout: os.Stdout,
-}
-
-func (o *DecryptOptions) RegisterFlags(fs *flag.FlagSet) {
-	fs.StringVar(&o.password, "p", "", "use the specified password; if not provided, dec will prompt for a password")
-	fs.BoolVar(&o.force, "f", false, "overwrite output files even if they already exist")
+	passwordIn: termReadPassword,
+	stdin:      os.Stdin,
+	stdout:     os.Stdout,
 }
 
 func (o *DecryptOptions) decryptFile(fileName string, password string) (err error) {
@@ -121,6 +127,13 @@ func (o *DecryptOptions) decryptFile(fileName string, password string) (err erro
 	return fOut.Close()
 }
 
+func (o *DecryptOptions) readPassword() (string, error) {
+	fmt.Fprint(os.Stderr, "Enter password: ")
+	pw, err := o.passwordIn()
+	fmt.Fprintln(os.Stderr)
+	return pw, err
+}
+
 func (o *DecryptOptions) Run(args ...string) error {
 	if len(args) == 0 && o.password == "" {
 		return fmt.Errorf("-p is required when reading from stdin")
@@ -130,7 +143,7 @@ func (o *DecryptOptions) Run(args ...string) error {
 		password = o.password
 	} else {
 		var err error
-		password, err = readPassword()
+		password, err = o.readPassword()
 		if err != nil {
 			return err
 		}

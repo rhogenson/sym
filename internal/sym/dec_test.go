@@ -2,6 +2,7 @@ package sym
 
 import (
 	"bytes"
+	"errors"
 	"flag"
 	"path/filepath"
 	"slices"
@@ -134,11 +135,11 @@ func TestDecryptOptions_RegisterFlags(t *testing.T) {
 	o.RegisterFlags(fs)
 	const cmd = "-p asdf -f"
 	fs.Parse(strings.Split(cmd, " "))
-	want := DecryptOptions{
+	want := decryptFlags{
 		password: "asdf",
 		force:    true,
 	}
-	if o != want {
+	if o.decryptFlags != want {
 		t.Errorf("Command line %q parsed incorrect DecryptOptions, got %+v, want %+v", cmd, o, want)
 	}
 }
@@ -206,5 +207,43 @@ func TestDecryptOptions_Run_Stdin(t *testing.T) {
 	gotContent := gotContentBuf.Bytes()
 	if !bytes.Equal(gotContent, content) {
 		t.Errorf("dec returned incorrect contents %q, want %q", gotContent, content)
+	}
+}
+
+func TestDecryptOptions_Run_ReadPassword(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		desc    string
+		err     error
+		wantErr bool
+	}{{
+		desc: "Ok",
+	}, {
+		desc:    "Err",
+		err:     errors.New("test error"),
+		wantErr: true,
+	}} {
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			const password = "asdf"
+
+			fileName := filepath.Join(t.TempDir(), "file")
+			mustWriteFile(t, fileName, []byte("test file content"))
+			if err := DefaultEncryptOptions.encryptFile(fileName, password); err != nil {
+				t.Errorf("EncryptFile failed: %s", err)
+			}
+			mustRemove(t, fileName)
+
+			opts := DefaultDecryptOptions
+			opts.passwordIn = func() (string, error) {
+				return password, tc.err
+			}
+			err := opts.Run(fileName + ".enc")
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Errorf("DecryptOptions.Run returned error %v reading password from stdin, want error? %t", err, tc.wantErr)
+			}
+		})
 	}
 }

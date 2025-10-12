@@ -2,6 +2,7 @@ package sym
 
 import (
 	"bytes"
+	"errors"
 	"flag"
 	"path/filepath"
 	"strings"
@@ -72,13 +73,13 @@ func TestEncryptOptions_RegisterFlags(t *testing.T) {
 	o.RegisterFlags(fs)
 	const cmd = "-g -p asdf -a -f"
 	fs.Parse(strings.Split(cmd, " "))
-	want := EncryptOptions{
+	want := encryptFlags{
 		generatePassword: true,
 		password:         "asdf",
 		asciiOutput:      true,
 		force:            true,
 	}
-	if o != want {
+	if o.encryptFlags != want {
 		t.Errorf("Command line %q parsed incorrect EncryptOptions, got %+v, want %+v", cmd, o, want)
 	}
 }
@@ -199,6 +200,59 @@ func TestEncryptOptions_Run_Stdin(t *testing.T) {
 			}
 			if got, want := got.String(), input; got != want {
 				t.Errorf("Encrypt round-trip to stdout returned incorrect contents: %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestEncryptOptions_Run_ReadPassword(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		desc      string
+		passwords []string
+		err       error
+		wantErr   bool
+	}{{
+		desc:      "Ok",
+		passwords: []string{"asdf"},
+	}, {
+		desc:      "EmptyPassword",
+		passwords: []string{""},
+		wantErr:   true,
+	}, {
+		desc:      "PasswordsDoNotMatch",
+		passwords: []string{"asdf", "jkl"},
+		wantErr:   true,
+	}, {
+		desc:    "ReadPasswordErr",
+		err:     errors.New("test error"),
+		wantErr: true,
+	}, {
+		desc:      "RepeatPasswordErr",
+		passwords: []string{"asdf"},
+		err:       errors.New("test error"),
+		wantErr:   true,
+	}} {
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			fileName := filepath.Join(t.TempDir(), "file")
+			mustWriteFile(t, fileName, []byte("test file content"))
+
+			opts := DefaultEncryptOptions
+			passwordI := 0
+			opts.passwordIn = func() (string, error) {
+				if passwordI == len(tc.passwords) && tc.err != nil {
+					return "", tc.err
+				}
+				pw := tc.passwords[passwordI%len(tc.passwords)]
+				passwordI++
+				return pw, nil
+			}
+			err := opts.Run(fileName)
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Errorf("EncryptOptions.Run returned error %v, want error? %t", err, tc.wantErr)
 			}
 		})
 	}

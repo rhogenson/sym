@@ -76,28 +76,34 @@ func encryptBase64(w io.Writer, r io.Reader, password string) error {
 	return bufWriter.Flush()
 }
 
-type EncryptOptions struct {
+type encryptFlags struct {
 	generatePassword bool
 	password         string
 	asciiOutput      bool
 	force            bool
+}
 
+func (f *encryptFlags) RegisterFlags(fs *flag.FlagSet) {
+	fs.BoolVar(&f.generatePassword, "g", false, "generate a secure password automatically (password will be printed to stderr)")
+	fs.StringVar(&f.password, "p", "", "use the specified password; if not provided, enc will prompt for a password")
+	fs.BoolVar(&f.asciiOutput, "a", false, "output in base64, default is binary output")
+	fs.BoolVar(&f.force, "f", false, "overwrite output files even if they already exist")
+}
+
+type EncryptOptions struct {
+	encryptFlags
+
+	passwordIn  func() (string, error)
 	passwordOut io.Writer
 	stdin       io.Reader
 	stdout      io.Writer
 }
 
 var DefaultEncryptOptions = EncryptOptions{
+	passwordIn:  termReadPassword,
 	passwordOut: os.Stderr,
 	stdin:       os.Stdin,
 	stdout:      os.Stdout,
-}
-
-func (o *EncryptOptions) RegisterFlags(fs *flag.FlagSet) {
-	fs.BoolVar(&o.generatePassword, "g", false, "generate a secure password automatically (password will be printed to stderr)")
-	fs.StringVar(&o.password, "p", "", "use the specified password; if not provided, enc will prompt for a password")
-	fs.BoolVar(&o.asciiOutput, "a", false, "output in base64, default is binary output")
-	fs.BoolVar(&o.force, "f", false, "overwrite output files even if they already exist")
 }
 
 func (o *EncryptOptions) encryptFile(fileName string, password string) (err error) {
@@ -140,6 +146,38 @@ func (o *EncryptOptions) encryptFile(fileName string, password string) (err erro
 	return fOut.Close()
 }
 
+func (o *EncryptOptions) readPassword() (string, error) {
+	const maxAttempts = 3
+	for i := 1; i <= maxAttempts; i++ {
+		fmt.Fprint(os.Stderr, "Enter password")
+		if i > 1 {
+			fmt.Fprintf(os.Stderr, " (attempt %d/%d)", i, maxAttempts)
+		}
+		fmt.Fprint(os.Stderr, ": ")
+		password, err := o.passwordIn()
+		fmt.Fprintln(os.Stderr)
+		if err != nil {
+			return "", err
+		}
+		if password == "" {
+			fmt.Fprintln(os.Stderr, "Password cannot be empty")
+			continue
+		}
+		fmt.Fprint(os.Stderr, "Repeat password: ")
+		pwConfirm, err := o.passwordIn()
+		fmt.Fprintln(os.Stderr)
+		if err != nil {
+			return "", err
+		}
+		if pwConfirm != password {
+			fmt.Fprintln(os.Stderr, "Passwords do not match")
+			continue
+		}
+		return password, nil
+	}
+	return "", fmt.Errorf("too many attempts")
+}
+
 func (o *EncryptOptions) Run(args ...string) error {
 	if o.generatePassword && o.password != "" {
 		return fmt.Errorf("-g and -p cannot be used together")
@@ -164,7 +202,7 @@ func (o *EncryptOptions) Run(args ...string) error {
 		fmt.Fprintln(os.Stderr)
 	} else {
 		var err error
-		if password, err = readPassword(); err != nil {
+		if password, err = o.readPassword(); err != nil {
 			return err
 		}
 	}
