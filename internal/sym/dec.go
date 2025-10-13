@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/base64"
+	"encoding/binary"
 	"errors"
 	"flag"
 	"fmt"
@@ -34,14 +35,21 @@ func (r *lineReader) Read(buf []byte) (int, error) {
 }
 
 func decryptBinary(w io.Writer, r io.Reader, password string) error {
-	header := make([]byte, len(magic))
-	if _, err := io.ReadFull(r, header); err != nil {
+	fileFormat := make([]byte, 4)
+	if _, err := io.ReadFull(r, fileFormat); err != nil {
 		return err
 	}
-	if !bytes.Equal(header, []byte(magic)) {
+	if string(fileFormat) != magic {
 		return fmt.Errorf("bad file format")
 	}
-	_, err := io.Copy(w, newDecryptingReader(r, password))
+	header := new(fileMetadata)
+	if err := binary.Read(r, binary.BigEndian, header); err != nil {
+		return err
+	}
+	if err := header.validate(); err != nil {
+		return err
+	}
+	_, err := io.Copy(w, header.EncryptionMetadata.newDecryptingReader(r, password, &header.HashMetadata))
 	return err
 }
 
@@ -60,8 +68,7 @@ func decrypt(w io.Writer, r io.Reader, password string) error {
 	if b[0] != '-' {
 		return errors.New("invalid input")
 	}
-	_, err = io.Copy(w, newDecryptingReader(base64.NewDecoder(base64.StdEncoding, &lineReader{r: bufReader}), password))
-	return err
+	return decryptBinary(w, base64.NewDecoder(base64.StdEncoding, &lineReader{r: bufReader}), password)
 }
 
 type decryptFlags struct {

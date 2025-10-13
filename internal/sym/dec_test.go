@@ -2,6 +2,7 @@ package sym
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"flag"
 	"path/filepath"
@@ -45,6 +46,31 @@ func TestDecryptFile_Force(t *testing.T) {
 	}
 }
 
+func encodeHeader(t *testing.T, f *fileMetadata) []byte {
+	t.Helper()
+
+	if f.HashMetadata.PasswordHashType == pwHashInvalid {
+		f.HashMetadata.PasswordHashType = pwHashPBKDF2_HMAC_SHA256
+	}
+	if f.HashMetadata.Iterations == 0 {
+		f.HashMetadata.Iterations = defaultPBKDF2Iters
+	}
+	if f.HashMetadata.SaltSize == 0 {
+		f.HashMetadata.SaltSize = defaultSaltSize
+	}
+	if f.EncryptionMetadata.EncryptionType == encryptionAlgInvalid {
+		f.EncryptionMetadata.EncryptionType = encryptionAlgAES256_GCM
+	}
+	if f.EncryptionMetadata.SegmentSize == 0 {
+		f.EncryptionMetadata.SegmentSize = defaultSegmentSize
+	}
+	b, err := binary.Append([]byte(magic), binary.BigEndian, f)
+	if err != nil {
+		t.Fatalf("Bad file metadata: %s", err)
+	}
+	return b
+}
+
 func TestDecrypt_BadFileFormat(t *testing.T) {
 	t.Parallel()
 
@@ -58,17 +84,68 @@ func TestDecrypt_BadFileFormat(t *testing.T) {
 		desc:        "Short",
 		fileContent: []byte{0x80},
 	}, {
-		desc:        "BadHeader",
-		fileContent: []byte{0x80, 'a', 's', 'd', 'f'},
-	}, {
 		desc:        "BadFormat",
 		fileContent: []byte("bad file format"),
 	}, {
-		desc:        "BadContent",
-		fileContent: []byte("\x80symasdfasdf"),
+		desc:        "BadMagic",
+		fileContent: []byte("\x80asdf"),
 	}, {
-		desc:        "BadContentLong",
-		fileContent: slices.Concat([]byte("\x80sym"), bytes.Repeat([]byte("asdf"), 100)),
+		desc:        "BadHeader",
+		fileContent: []byte("\x80symasdf"),
+	}, {
+		desc: "BadVersion",
+		fileContent: encodeHeader(t, &fileMetadata{
+			Version: -1,
+		}),
+	}, {
+		desc: "BadEncryptionAlg",
+		fileContent: encodeHeader(t, &fileMetadata{
+			EncryptionMetadata: encryptionMetadata{
+				EncryptionType: -1,
+			},
+		}),
+	}, {
+		desc: "BadSegmentSize",
+		fileContent: encodeHeader(t, &fileMetadata{
+			EncryptionMetadata: encryptionMetadata{
+				SegmentSize: -1,
+			},
+		}),
+	}, {
+		desc: "BadSaltSize",
+		fileContent: encodeHeader(t, &fileMetadata{
+			HashMetadata: hashMetadata{
+				SaltSize: -1,
+			},
+		}),
+	}, {
+		desc: "BadPasswordHashType",
+		fileContent: encodeHeader(t, &fileMetadata{
+			HashMetadata: hashMetadata{
+				PasswordHashType: -1,
+			},
+		}),
+	}, {
+		desc: "BadIterations",
+		fileContent: encodeHeader(t, &fileMetadata{
+			HashMetadata: hashMetadata{
+				Iterations: -1,
+			},
+		}),
+	}, {
+		desc:        "NoSalt",
+		fileContent: encodeHeader(t, &fileMetadata{}),
+	}, {
+		desc: "ShortSalt",
+		fileContent: slices.Concat(
+			encodeHeader(t, &fileMetadata{}),
+			[]byte("asdf")),
+	}, {
+		desc: "BadContent",
+		fileContent: slices.Concat(
+			encodeHeader(t, &fileMetadata{}),
+			bytes.Repeat([]byte{0}, defaultSaltSize),
+			[]byte("bad content")),
 	}} {
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()

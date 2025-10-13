@@ -45,7 +45,22 @@ func encryptBinary(w io.Writer, r io.Reader, password string) error {
 	if _, err := io.WriteString(w, magic); err != nil {
 		return err
 	}
-	writer := newEncryptingWriter(w, password)
+	header := &fileMetadata{
+		Version: 0,
+		HashMetadata: hashMetadata{
+			PasswordHashType: pwHashPBKDF2_HMAC_SHA256,
+			Iterations:       defaultPBKDF2Iters,
+			SaltSize:         defaultSaltSize,
+		},
+		EncryptionMetadata: encryptionMetadata{
+			EncryptionType: encryptionAlgAES256_GCM,
+			SegmentSize:    defaultSegmentSize,
+		},
+	}
+	if err := binary.Write(w, binary.BigEndian, header); err != nil {
+		return err
+	}
+	writer := header.EncryptionMetadata.newEncryptingWriter(w, password, &header.HashMetadata)
 	if _, err := io.Copy(writer, r); err != nil {
 		return err
 	}
@@ -60,11 +75,7 @@ func encryptBase64(w io.Writer, r io.Reader, password string) error {
 		return err
 	}
 	base64Writer := base64.NewEncoder(base64.StdEncoding, &newlineWriter{w: bufWriter})
-	encryptingWriter := newEncryptingWriter(base64Writer, password)
-	if _, err := io.Copy(encryptingWriter, r); err != nil {
-		return err
-	}
-	if err := encryptingWriter.Close(); err != nil {
+	if err := encryptBinary(base64Writer, r, password); err != nil {
 		return err
 	}
 	if err := base64Writer.Close(); err != nil {
