@@ -186,7 +186,7 @@ type decryptingReader struct {
 
 func (e *encryptionMetadata) newDecryptingReader(r io.Reader, password string, passwordMetadata *hashMetadata) *decryptingReader {
 	return &decryptingReader{
-		r: bufio.NewReaderSize(r, 1),
+		r: bufio.NewReaderSize(r, 0), // we only need .UnreadByte
 		decrypter: segmentEncrypter{
 			hashMetadata:       *passwordMetadata,
 			encryptionMetadata: *e,
@@ -209,21 +209,25 @@ func (r *decryptingReader) initialize() error {
 	if err := r.decrypter.initialize(header); err != nil {
 		return err
 	}
-	r.buf = *bytes.NewBuffer(make([]byte, 0, r.decrypter.encryptionMetadata.SegmentSize))
+	r.buf = *bytes.NewBuffer(make([]byte, 0, r.decrypter.encryptionMetadata.SegmentSize+1))
 	r.initialized = true
 	return nil
 }
 
 func (r *decryptingReader) fillBuf() error {
 	r.buf.Reset()
-	buf := r.buf.AvailableBuffer()[:r.decrypter.encryptionMetadata.SegmentSize]
+	// Read 1 extra byte to make sure if we're at EOF.
+	buf := r.buf.AvailableBuffer()[:r.decrypter.encryptionMetadata.SegmentSize+1]
 	n, err := io.ReadFull(r.r, buf)
-	if n == 0 {
+	if err != nil && err != io.ErrUnexpectedEOF {
 		return err
 	}
 	buf = buf[:n]
-	_, readErr := r.r.Peek(1)
-	buf, err = r.decrypter.decrypt(buf[:0], buf, readErr == io.EOF)
+	if len(buf) == int(r.decrypter.encryptionMetadata.SegmentSize)+1 {
+		r.r.UnreadByte()
+		buf = buf[:r.decrypter.encryptionMetadata.SegmentSize]
+	}
+	buf, err = r.decrypter.decrypt(buf[:0], buf, err == io.ErrUnexpectedEOF)
 	if err != nil {
 		return err
 	}
