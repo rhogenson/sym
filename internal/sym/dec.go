@@ -2,7 +2,6 @@ package sym
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
@@ -12,27 +11,6 @@ import (
 	"os"
 	"strings"
 )
-
-type lineReader struct {
-	r    *bufio.Reader
-	line []byte
-}
-
-func (r *lineReader) Read(buf []byte) (int, error) {
-	for len(r.line) == 0 {
-		line, err := r.r.ReadBytes('\n')
-		if len(line) == 0 {
-			return 0, err
-		}
-		if bytes.HasPrefix(line, []byte("-")) {
-			continue
-		}
-		r.line = bytes.TrimSuffix(line, []byte("\n"))
-	}
-	n := copy(buf, r.line)
-	r.line = r.line[n:]
-	return n, nil
-}
 
 func decryptBinary(w io.Writer, r io.Reader, password string) error {
 	fileFormat := make([]byte, 4)
@@ -68,7 +46,16 @@ func decrypt(w io.Writer, r io.Reader, password string) error {
 	if b[0] != '-' {
 		return errors.New("invalid input")
 	}
-	return decryptBinary(w, base64.NewDecoder(base64.StdEncoding, &lineReader{r: bufReader}), password)
+	for {
+		_, err := bufReader.ReadBytes('\n')
+		if err != nil {
+			return err
+		}
+		if b, err := bufReader.Peek(1); err != nil || b[0] != '-' {
+			break
+		}
+	}
+	return decryptBinary(w, base64.NewDecoder(base64.StdEncoding, bufReader), password)
 }
 
 type decryptFlags struct {
