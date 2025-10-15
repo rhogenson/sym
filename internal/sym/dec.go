@@ -32,7 +32,7 @@ func decryptBinary(w io.Writer, r io.Reader, password string) error {
 }
 
 func decrypt(w io.Writer, r io.Reader, password string) error {
-	bufReader := bufio.NewReader(r)
+	bufReader := bufio.NewReaderSize(r, 81)
 	b, err := bufReader.Peek(1)
 	if err != nil {
 		if err == io.EOF {
@@ -47,10 +47,7 @@ func decrypt(w io.Writer, r io.Reader, password string) error {
 		return errors.New("invalid input")
 	}
 	for {
-		_, err := bufReader.ReadBytes('\n')
-		if err != nil {
-			return err
-		}
+		bufReader.ReadLine()
 		if b, err := bufReader.Peek(1); err != nil || b[0] != '-' {
 			break
 		}
