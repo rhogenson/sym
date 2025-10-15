@@ -177,6 +177,31 @@ func (w *encryptingWriter) Close() error {
 	return w.writeBuf(true)
 }
 
+func (w *encryptingWriter) ReadFrom(r io.Reader) (int64, error) {
+	if err := w.initialize(); err != nil {
+		return 0, err
+	}
+	var nn int64
+	for {
+		n, err := io.ReadFull(r, w.buf[len(w.buf):w.encrypter.encryptionMetadata.plaintextSegmentSize()+1])
+		nn += int64(n)
+		w.buf = w.buf[:len(w.buf)+n]
+		if err != nil {
+			if err == io.EOF || err == io.ErrUnexpectedEOF {
+				return nn, nil
+			}
+			return nn, err
+		}
+		nextByte := w.buf[w.encrypter.encryptionMetadata.plaintextSegmentSize()]
+		w.buf = w.buf[:w.encrypter.encryptionMetadata.plaintextSegmentSize()]
+		if err := w.writeBuf(false); err != nil {
+			return nn, err
+		}
+		w.buf = w.buf[:1]
+		w.buf[0] = nextByte
+	}
+}
+
 type decryptingReader struct {
 	r           *bufio.Reader
 	decrypter   segmentEncrypter
@@ -245,4 +270,24 @@ func (r *decryptingReader) Read(buf []byte) (int, error) {
 		}
 	}
 	return r.buf.Read(buf)
+}
+
+func (r *decryptingReader) WriteTo(w io.Writer) (int64, error) {
+	if err := r.initialize(); err != nil {
+		return 0, err
+	}
+	var nn int64
+	for {
+		n, err := r.buf.WriteTo(w)
+		nn += n
+		if err != nil {
+			return nn, err
+		}
+		if err := r.fillBuf(); err != nil {
+			if err == io.EOF {
+				return nn, nil
+			}
+			return nn, err
+		}
+	}
 }

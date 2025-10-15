@@ -41,52 +41,6 @@ func (w *newlineWriter) Write(buf []byte) (int, error) {
 	return nn, nil
 }
 
-func encryptBinary(w io.Writer, r io.Reader, password string) error {
-	if _, err := io.WriteString(w, magic); err != nil {
-		return err
-	}
-	header := &fileMetadata{
-		Version: 0,
-		HashMetadata: hashMetadata{
-			PasswordHashType: pwHashPBKDF2_HMAC_SHA256,
-			Iterations:       defaultPBKDF2Iters,
-			SaltSize:         defaultSaltSize,
-		},
-		EncryptionMetadata: encryptionMetadata{
-			EncryptionType: encryptionAlgAES256_GCM,
-			SegmentSize:    defaultSegmentSize,
-		},
-	}
-	if err := binary.Write(w, binary.BigEndian, header); err != nil {
-		return err
-	}
-	writer := header.EncryptionMetadata.newEncryptingWriter(w, password, &header.HashMetadata)
-	if _, err := io.Copy(writer, r); err != nil {
-		return err
-	}
-	return writer.Close()
-}
-
-func encryptBase64(w io.Writer, r io.Reader, password string) error {
-	bufWriter := bufio.NewWriter(w)
-	if _, err := bufWriter.WriteString(`-------------------------- Begin encrypted text block --------------------------
--------------------------- am i cool like gpg? ---------------------------------
-`); err != nil {
-		return err
-	}
-	base64Writer := base64.NewEncoder(base64.StdEncoding, &newlineWriter{w: bufWriter})
-	if err := encryptBinary(base64Writer, r, password); err != nil {
-		return err
-	}
-	if err := base64Writer.Close(); err != nil {
-		return err
-	}
-	if err := bufWriter.WriteByte('\n'); err != nil {
-		return err
-	}
-	return bufWriter.Flush()
-}
-
 type encryptFlags struct {
 	generatePassword bool
 	password         string
@@ -104,6 +58,7 @@ func (f *encryptFlags) RegisterFlags(fs *flag.FlagSet) {
 type EncryptOptions struct {
 	encryptFlags
 
+	iterations  int
 	passwordIn  func() (string, error)
 	passwordOut io.Writer
 	stdin       io.Reader
@@ -111,10 +66,57 @@ type EncryptOptions struct {
 }
 
 var DefaultEncryptOptions = EncryptOptions{
+	iterations:  defaultPBKDF2Iters,
 	passwordIn:  termReadPassword,
 	passwordOut: os.Stderr,
 	stdin:       os.Stdin,
 	stdout:      os.Stdout,
+}
+
+func (o *EncryptOptions) encryptBinary(w io.Writer, r io.Reader, password string) error {
+	if _, err := io.WriteString(w, magic); err != nil {
+		return err
+	}
+	header := &fileMetadata{
+		Version: 0,
+		HashMetadata: hashMetadata{
+			PasswordHashType: pwHashPBKDF2_HMAC_SHA256,
+			Iterations:       int32(o.iterations),
+			SaltSize:         defaultSaltSize,
+		},
+		EncryptionMetadata: encryptionMetadata{
+			EncryptionType: encryptionAlgAES256_GCM,
+			SegmentSize:    defaultSegmentSize,
+		},
+	}
+	if err := binary.Write(w, binary.BigEndian, header); err != nil {
+		return err
+	}
+	writer := header.EncryptionMetadata.newEncryptingWriter(w, password, &header.HashMetadata)
+	if _, err := io.Copy(writer, r); err != nil {
+		return err
+	}
+	return writer.Close()
+}
+
+func (o *EncryptOptions) encryptBase64(w io.Writer, r io.Reader, password string) error {
+	bufWriter := bufio.NewWriter(w)
+	if _, err := bufWriter.WriteString(`-------------------------- Begin encrypted text block --------------------------
+-------------------------- am i cool like gpg? ---------------------------------
+`); err != nil {
+		return err
+	}
+	base64Writer := base64.NewEncoder(base64.StdEncoding, &newlineWriter{w: bufWriter})
+	if err := o.encryptBinary(base64Writer, r, password); err != nil {
+		return err
+	}
+	if err := base64Writer.Close(); err != nil {
+		return err
+	}
+	if err := bufWriter.WriteByte('\n'); err != nil {
+		return err
+	}
+	return bufWriter.Flush()
 }
 
 func (o *EncryptOptions) encryptFile(fileName string, password string) (err error) {
@@ -147,9 +149,9 @@ func (o *EncryptOptions) encryptFile(fileName string, password string) (err erro
 		}
 	}()
 	if o.asciiOutput {
-		err = encryptBase64(fOut, f, password)
+		err = o.encryptBase64(fOut, f, password)
 	} else {
-		err = encryptBinary(fOut, f, password)
+		err = o.encryptBinary(fOut, f, password)
 	}
 	if err != nil {
 		return fmt.Errorf("encrypt %q: %s", fileName, err)
@@ -219,9 +221,9 @@ func (o *EncryptOptions) Run(args ...string) error {
 	}
 	if len(args) == 0 {
 		if o.asciiOutput {
-			return encryptBase64(o.stdout, o.stdin, password)
+			return o.encryptBase64(o.stdout, o.stdin, password)
 		}
-		return encryptBinary(o.stdout, o.stdin, password)
+		return o.encryptBinary(o.stdout, o.stdin, password)
 	}
 	for _, fileName := range args {
 		if err := o.encryptFile(fileName, password); err != nil {

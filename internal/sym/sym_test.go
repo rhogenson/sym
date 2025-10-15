@@ -7,6 +7,12 @@ import (
 	"testing"
 )
 
+var testEncryptOptions = func() EncryptOptions {
+	opts := DefaultEncryptOptions
+	opts.iterations = 10
+	return opts
+}()
+
 func mustWriteFile(t *testing.T, path string, content []byte) {
 	t.Helper()
 	if err := os.WriteFile(path, content, 0600); err != nil {
@@ -67,7 +73,7 @@ func TestEncryptDecrypt(t *testing.T) {
 			fileName := filepath.Join(t.TempDir(), "file")
 			mustWriteFile(t, fileName, buf)
 			const password = "karp cache tidal mars fed rajah uses graze pobox flew"
-			encOpts := DefaultEncryptOptions
+			encOpts := testEncryptOptions
 			encOpts.asciiOutput = tc.ascii
 			if err := encOpts.encryptFile(fileName, password); err != nil {
 				t.Fatalf("EncryptFile failed: %s", err)

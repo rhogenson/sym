@@ -33,7 +33,7 @@ func TestDecryptFile_Force(t *testing.T) {
 			const password = "asdf"
 			fileName := filepath.Join(t.TempDir(), "file")
 			mustWriteFile(t, fileName, []byte("test file content"))
-			if err := DefaultEncryptOptions.encryptFile(fileName, password); err != nil {
+			if err := testEncryptOptions.encryptFile(fileName, password); err != nil {
 				t.Fatalf("Failed to encrypt file: %s", err)
 			}
 			decOpts := DefaultDecryptOptions
@@ -53,7 +53,7 @@ func encodeHeader(t *testing.T, f *fileMetadata) []byte {
 		f.HashMetadata.PasswordHashType = pwHashPBKDF2_HMAC_SHA256
 	}
 	if f.HashMetadata.Iterations == 0 {
-		f.HashMetadata.Iterations = defaultPBKDF2Iters
+		f.HashMetadata.Iterations = 10
 	}
 	if f.HashMetadata.SaltSize == 0 {
 		f.HashMetadata.SaltSize = defaultSaltSize
@@ -167,7 +167,7 @@ func TestDecryptFile_WeirdName(t *testing.T) {
 	fileContent := []byte("file content")
 	fileName := filepath.Join(t.TempDir(), "file")
 	mustWriteFile(t, fileName, fileContent)
-	if err := DefaultEncryptOptions.encryptFile(fileName, password); err != nil {
+	if err := testEncryptOptions.encryptFile(fileName, password); err != nil {
 		t.Fatalf("EncryptFile failed: %s", err)
 	}
 	mustRename(t, fileName+".enc", fileName+".encrypted")
@@ -228,7 +228,7 @@ func TestDecryptOptions_Run(t *testing.T) {
 	fileContent := []byte("test file content")
 	fileName := filepath.Join(t.TempDir(), "file")
 	mustWriteFile(t, fileName, fileContent)
-	if err := DefaultEncryptOptions.encryptFile(fileName, password); err != nil {
+	if err := testEncryptOptions.encryptFile(fileName, password); err != nil {
 		t.Errorf("EncryptFile failed: %s", err)
 	}
 	mustRemove(t, fileName)
@@ -270,7 +270,7 @@ func TestDecryptOptions_Run_Stdin(t *testing.T) {
 	const password = "asdf"
 	content := []byte("test contents")
 	encrypted := new(bytes.Buffer)
-	if err := encryptBinary(encrypted, bytes.NewReader(content), password); err != nil {
+	if err := testEncryptOptions.encryptBinary(encrypted, bytes.NewReader(content), password); err != nil {
 		t.Fatalf("Failed to encrypt: %s", err)
 	}
 	gotContentBuf := new(bytes.Buffer)
@@ -308,7 +308,7 @@ func TestDecryptOptions_Run_ReadPassword(t *testing.T) {
 
 			fileName := filepath.Join(t.TempDir(), "file")
 			mustWriteFile(t, fileName, []byte("test file content"))
-			if err := DefaultEncryptOptions.encryptFile(fileName, password); err != nil {
+			if err := testEncryptOptions.encryptFile(fileName, password); err != nil {
 				t.Errorf("EncryptFile failed: %s", err)
 			}
 			mustRemove(t, fileName)
