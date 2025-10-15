@@ -54,7 +54,7 @@ func decryptBinary(w io.Writer, r io.Reader, password string) error {
 }
 
 func decrypt(w io.Writer, r io.Reader, password string) error {
-	bufReader := bufio.NewReaderSize(r, 81)
+	bufReader := bufio.NewReader(r)
 	b, err := bufReader.Peek(1)
 	if err != nil {
 		if err == io.EOF {
