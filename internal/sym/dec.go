@@ -47,7 +47,11 @@ func decrypt(w io.Writer, r io.Reader, password string) error {
 		return errors.New("invalid input")
 	}
 	for {
-		bufReader.ReadLine()
+		for {
+			if _, isPrefix, err := bufReader.ReadLine(); err != nil || !isPrefix {
+				break
+			}
+		}
 		if b, err := bufReader.Peek(1); err != nil || b[0] != '-' {
 			break
 		}
