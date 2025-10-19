@@ -270,7 +270,7 @@ func TestDecryptOptions_Run_Stdin(t *testing.T) {
 	const password = "asdf"
 	content := []byte("test contents")
 	encrypted := new(bytes.Buffer)
-	if err := testEncryptOptions.encryptBinary(encrypted, bytes.NewReader(content), password); err != nil {
+	if err := testEncryptOptions.encrypt(encrypted, bytes.NewReader(content), password); err != nil {
 		t.Fatalf("Failed to encrypt: %s", err)
 	}
 	gotContentBuf := new(bytes.Buffer)

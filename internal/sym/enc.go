@@ -1,9 +1,7 @@
 package sym
 
 import (
-	"bufio"
 	"crypto/rand"
-	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"flag"
@@ -15,81 +13,15 @@ import (
 	"roseh.moe/pkg/wordlist"
 )
 
-type asciiWriter struct {
-	w    *bufio.Writer
-	buf  [2]byte
-	nBuf int
-	n    int
-}
-
-func (w *asciiWriter) writeBase64(b []byte) (int, error) {
-	_, err := w.w.Write(base64.StdEncoding.AppendEncode(w.w.AvailableBuffer(), b))
-	return len(b), err
-}
-
-func (w *asciiWriter) Write(b []byte) (int, error) {
-	const lineSizeBytes = 60
-
-	nn := 0
-	if w.nBuf > 0 && w.nBuf+len(b) >= 3 {
-		leadingChunk := make([]byte, 3)
-		n := copy(leadingChunk, w.buf[:w.nBuf])
-		w.nBuf = 0
-		n = copy(leadingChunk[n:], b)
-		b = b[n:]
-		n, err := w.writeBase64(leadingChunk)
-		nn += n
-		w.n += n
-		if err != nil {
-			return nn, err
-		}
-	}
-	for len(b) >= 3 {
-		chunkSize := lineSizeBytes - w.n
-		if chunkSize > len(b) {
-			chunkSize = len(b) - len(b)%3
-		}
-		n, err := w.writeBase64(b[:chunkSize])
-		nn += n
-		w.n += n
-		if err != nil {
-			return nn, err
-		}
-		b = b[n:]
-		if w.n == lineSizeBytes {
-			w.w.WriteByte('\n')
-			w.n = 0
-		}
-	}
-	n := copy(w.buf[:], b)
-	nn += n
-	w.nBuf = n
-	return nn, nil
-}
-
-func (w *asciiWriter) Close() error {
-	if w.nBuf > 0 {
-		if _, err := w.writeBase64(w.buf[:w.nBuf]); err != nil {
-			return err
-		}
-		if err := w.w.WriteByte('\n'); err != nil {
-			return err
-		}
-	}
-	return w.w.Flush()
-}
-
 type encryptFlags struct {
 	generatePassword bool
 	password         string
-	asciiOutput      bool
 	force            bool
 }
 
 func (f *encryptFlags) RegisterFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&f.generatePassword, "g", false, "generate a secure password automatically (password will be printed to stderr)")
 	fs.StringVar(&f.password, "p", "", "use the specified password; if not provided, enc will prompt for a password")
-	fs.BoolVar(&f.asciiOutput, "a", false, "output in base64, default is binary output")
 	fs.BoolVar(&f.force, "f", false, "overwrite output files even if they already exist")
 }
 
@@ -111,7 +43,7 @@ var DefaultEncryptOptions = EncryptOptions{
 	stdout:      os.Stdout,
 }
 
-func (o *EncryptOptions) encryptBinary(w io.Writer, r io.Reader, password string) error {
+func (o *EncryptOptions) encrypt(w io.Writer, r io.Reader, password string) error {
 	if _, err := io.WriteString(w, magic); err != nil {
 		return err
 	}
@@ -137,40 +69,22 @@ func (o *EncryptOptions) encryptBinary(w io.Writer, r io.Reader, password string
 	return writer.Close()
 }
 
-func (o *EncryptOptions) encryptBase64(w io.Writer, r io.Reader, password string) error {
-	bufWriter := bufio.NewWriter(w)
-	if _, err := bufWriter.WriteString(`-------------------------- Begin encrypted text block --------------------------
--------------------------- am i cool like gpg? ---------------------------------
-`); err != nil {
-		return err
-	}
-	base64Writer := &asciiWriter{w: bufWriter}
-	if err := o.encryptBinary(base64Writer, r, password); err != nil {
-		return err
-	}
-	return base64Writer.Close()
-}
-
 func (o *EncryptOptions) encryptFile(fileName string, password string) (err error) {
 	f, err := os.Open(fileName)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	ext := ".enc"
-	if o.asciiOutput {
-		ext = ".enc.txt"
-	}
 	fileOpts := os.O_CREATE | os.O_WRONLY
 	if o.force {
 		fileOpts |= os.O_TRUNC
 	} else {
 		fileOpts |= os.O_EXCL
 	}
-	fOut, err := os.OpenFile(fileName+ext, fileOpts, 0644)
+	fOut, err := os.OpenFile(fileName+".enc", fileOpts, 0644)
 	if err != nil {
 		if errors.Is(err, os.ErrExist) {
-			return fmt.Errorf("output file %q exists (use -f to overwrite)", fileName+ext)
+			return fmt.Errorf("output file %q exists (use -f to overwrite)", fileName+".enc")
 		}
 		return err
 	}
@@ -180,12 +94,7 @@ func (o *EncryptOptions) encryptFile(fileName string, password string) (err erro
 			os.Remove(fOut.Name())
 		}
 	}()
-	if o.asciiOutput {
-		err = o.encryptBase64(fOut, f, password)
-	} else {
-		err = o.encryptBinary(fOut, f, password)
-	}
-	if err != nil {
+	if err = o.encrypt(fOut, f, password); err != nil {
 		return fmt.Errorf("encrypt %q: %s", fileName, err)
 	}
 	return fOut.Close()
@@ -252,10 +161,7 @@ func (o *EncryptOptions) Run(args ...string) error {
 		}
 	}
 	if len(args) == 0 {
-		if o.asciiOutput {
-			return o.encryptBase64(o.stdout, o.stdin, password)
-		}
-		return o.encryptBinary(o.stdout, o.stdin, password)
+		return o.encrypt(o.stdout, o.stdin, password)
 	}
 	for _, fileName := range args {
 		if err := o.encryptFile(fileName, password); err != nil {

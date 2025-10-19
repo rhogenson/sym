@@ -57,39 +57,19 @@ func TestEncryptDecrypt(t *testing.T) {
 	for i := range buf {
 		buf[i] = byte(i)
 	}
-	for _, tc := range []struct {
-		desc  string
-		ascii bool
-	}{{
-		desc:  "Binary",
-		ascii: false,
-	}, {
-		desc:  "ASCII",
-		ascii: true,
-	}} {
-		t.Run(tc.desc, func(t *testing.T) {
-			t.Parallel()
 
-			fileName := filepath.Join(t.TempDir(), "file")
-			mustWriteFile(t, fileName, buf)
-			const password = "karp cache tidal mars fed rajah uses graze pobox flew"
-			encOpts := testEncryptOptions
-			encOpts.asciiOutput = tc.ascii
-			if err := encOpts.encryptFile(fileName, password); err != nil {
-				t.Fatalf("EncryptFile failed: %s", err)
-			}
-			mustRemove(t, fileName)
-			ext := ".enc"
-			if tc.ascii {
-				ext = ".enc.txt"
-			}
-			if err := DefaultDecryptOptions.decryptFile(fileName+ext, password); err != nil {
-				t.Fatalf("DecryptFile failed: %s", err)
-			}
-			gotContents := mustReadFile(t, fileName)
-			if !bytes.Equal(gotContents, buf) {
-				t.Errorf("contents differ")
-			}
-		})
+	fileName := filepath.Join(t.TempDir(), "file")
+	mustWriteFile(t, fileName, buf)
+	const password = "karp cache tidal mars fed rajah uses graze pobox flew"
+	if err := testEncryptOptions.encryptFile(fileName, password); err != nil {
+		t.Fatalf("EncryptFile failed: %s", err)
+	}
+	mustRemove(t, fileName)
+	if err := DefaultDecryptOptions.decryptFile(fileName+".enc", password); err != nil {
+		t.Fatalf("DecryptFile failed: %s", err)
+	}
+	gotContents := mustReadFile(t, fileName)
+	if !bytes.Equal(gotContents, buf) {
+		t.Errorf("contents differ")
 	}
 }

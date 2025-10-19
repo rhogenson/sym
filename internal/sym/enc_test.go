@@ -71,12 +71,11 @@ func TestEncryptOptions_RegisterFlags(t *testing.T) {
 	var o EncryptOptions
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	o.RegisterFlags(fs)
-	const cmd = "-g -p asdf -a -f"
+	const cmd = "-g -p asdf -f"
 	fs.Parse(strings.Split(cmd, " "))
 	want := encryptFlags{
 		generatePassword: true,
 		password:         "asdf",
-		asciiOutput:      true,
 		force:            true,
 	}
 	if o.encryptFlags != want {
@@ -168,40 +167,24 @@ func TestEncryptOptions_Run_GeneratePassword(t *testing.T) {
 func TestEncryptOptions_Run_Stdin(t *testing.T) {
 	t.Parallel()
 
-	for _, tc := range []struct {
-		desc  string
-		ascii bool
-	}{{
-		desc:  "Binary",
-		ascii: false,
-	}, {
-		desc:  "ASCII",
-		ascii: true,
-	}} {
-		t.Run(tc.desc, func(t *testing.T) {
-			t.Parallel()
-
-			const (
-				input    = "test input"
-				password = "asdf"
-			)
-			stdout := new(strings.Builder)
-			opts := testEncryptOptions
-			opts.password = password
-			opts.asciiOutput = tc.ascii
-			opts.stdin = strings.NewReader(input)
-			opts.stdout = stdout
-			if err := opts.Run(); err != nil {
-				t.Errorf("enc(+%v) failed: %s", opts, err)
-			}
-			got := new(strings.Builder)
-			if err := decrypt(got, strings.NewReader(stdout.String()), password); err != nil {
-				t.Errorf("Failed to decrypt stdout content %q: %s", stdout, err)
-			}
-			if got, want := got.String(), input; got != want {
-				t.Errorf("Encrypt round-trip to stdout returned incorrect contents: %q, want %q", got, want)
-			}
-		})
+	const (
+		input    = "test input"
+		password = "asdf"
+	)
+	stdout := new(strings.Builder)
+	opts := testEncryptOptions
+	opts.password = password
+	opts.stdin = strings.NewReader(input)
+	opts.stdout = stdout
+	if err := opts.Run(); err != nil {
+		t.Errorf("enc(+%v) failed: %s", opts, err)
+	}
+	got := new(strings.Builder)
+	if err := decrypt(got, strings.NewReader(stdout.String()), password); err != nil {
+		t.Errorf("Failed to decrypt stdout content %q: %s", stdout, err)
+	}
+	if got, want := got.String(), input; got != want {
+		t.Errorf("Encrypt round-trip to stdout returned incorrect contents: %q, want %q", got, want)
 	}
 }
 
