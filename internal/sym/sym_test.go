@@ -53,7 +53,7 @@ func mustChmod(t *testing.T, path string, mod os.FileMode) {
 func TestEncryptDecrypt(t *testing.T) {
 	t.Parallel()
 
-	buf := make([]byte, 10*1024*1024)
+	buf := make([]byte, 12*1024*1024)
 	for i := range buf {
 		buf[i] = byte(i)
 	}

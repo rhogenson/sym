@@ -196,7 +196,7 @@ func TestEncryptOptions_Run_Stdin(t *testing.T) {
 			}
 			got := new(strings.Builder)
 			if err := decrypt(got, strings.NewReader(stdout.String()), password); err != nil {
-				t.Errorf("Failed to decrypt stdout content: %s", err)
+				t.Errorf("Failed to decrypt stdout content %q: %s", stdout, err)
 			}
 			if got, want := got.String(), input; got != want {
 				t.Errorf("Encrypt round-trip to stdout returned incorrect contents: %q, want %q", got, want)

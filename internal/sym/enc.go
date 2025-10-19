@@ -15,30 +15,68 @@ import (
 	"roseh.moe/pkg/wordlist"
 )
 
-type newlineWriter struct {
-	w *bufio.Writer
-	n int
+type asciiWriter struct {
+	w    *bufio.Writer
+	buf  [2]byte
+	nBuf int
+	n    int
 }
 
-func (w *newlineWriter) Write(buf []byte) (int, error) {
-	const lineSize = 80
+func (w *asciiWriter) writeBase64(b []byte) (int, error) {
+	_, err := w.w.Write(base64.StdEncoding.AppendEncode(w.w.AvailableBuffer(), b))
+	return len(b), err
+}
+
+func (w *asciiWriter) Write(b []byte) (int, error) {
+	const lineSizeBytes = 60
+
 	nn := 0
-	for len(buf) > 0 {
-		if w.n == lineSize {
-			if err := w.w.WriteByte('\n'); err != nil {
-				return nn, err
-			}
-			w.n = 0
-		}
-		n, err := w.w.Write(buf[:min(lineSize-w.n, len(buf))])
+	if w.nBuf > 0 && w.nBuf+len(b) >= 3 {
+		leadingChunk := make([]byte, 3)
+		n := copy(leadingChunk, w.buf[:w.nBuf])
+		w.nBuf = 0
+		n = copy(leadingChunk[n:], b)
+		b = b[n:]
+		n, err := w.writeBase64(leadingChunk)
 		nn += n
-		buf = buf[n:]
 		w.n += n
 		if err != nil {
 			return nn, err
 		}
 	}
+	for len(b) >= 3 {
+		chunkSize := lineSizeBytes - w.n
+		if chunkSize > len(b) {
+			chunkSize = len(b) - len(b)%3
+		}
+		n, err := w.writeBase64(b[:chunkSize])
+		nn += n
+		w.n += n
+		if err != nil {
+			return nn, err
+		}
+		b = b[n:]
+		if w.n == lineSizeBytes {
+			w.w.WriteByte('\n')
+			w.n = 0
+		}
+	}
+	n := copy(w.buf[:], b)
+	nn += n
+	w.nBuf = n
 	return nn, nil
+}
+
+func (w *asciiWriter) Close() error {
+	if w.nBuf > 0 {
+		if _, err := w.writeBase64(w.buf[:w.nBuf]); err != nil {
+			return err
+		}
+		if err := w.w.WriteByte('\n'); err != nil {
+			return err
+		}
+	}
+	return w.w.Flush()
 }
 
 type encryptFlags struct {
@@ -106,17 +144,11 @@ func (o *EncryptOptions) encryptBase64(w io.Writer, r io.Reader, password string
 `); err != nil {
 		return err
 	}
-	base64Writer := base64.NewEncoder(base64.StdEncoding, &newlineWriter{w: bufWriter})
+	base64Writer := &asciiWriter{w: bufWriter}
 	if err := o.encryptBinary(base64Writer, r, password); err != nil {
 		return err
 	}
-	if err := base64Writer.Close(); err != nil {
-		return err
-	}
-	if err := bufWriter.WriteByte('\n'); err != nil {
-		return err
-	}
-	return bufWriter.Flush()
+	return base64Writer.Close()
 }
 
 func (o *EncryptOptions) encryptFile(fileName string, password string) (err error) {
