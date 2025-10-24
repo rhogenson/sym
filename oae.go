@@ -1,4 +1,4 @@
-package sym
+package main
 
 import (
 	"bufio"
@@ -170,7 +170,7 @@ func (w *encryptingWriter) Write(buf []byte) (int, error) {
 	return nn, nil
 }
 
-func (w *encryptingWriter) Close() error {
+func (w *encryptingWriter) close() error {
 	if err := w.initialize(); err != nil {
 		return err
 	}

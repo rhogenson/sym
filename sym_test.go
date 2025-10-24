@@ -1,4 +1,4 @@
-package sym
+package main
 
 import (
 	"bytes"
@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
-var testEncryptOptions = func() EncryptOptions {
-	opts := DefaultEncryptOptions
+var testEncryptOptions = func() encryptOptions {
+	opts := defaultEncryptOptions
 	opts.iterations = 10
 	return opts
 }()
@@ -65,7 +65,7 @@ func TestEncryptDecrypt(t *testing.T) {
 		t.Fatalf("EncryptFile failed: %s", err)
 	}
 	mustRemove(t, fileName)
-	if err := DefaultDecryptOptions.decryptFile(fileName+".enc", password); err != nil {
+	if err := defaultDecryptOptions.decryptFile(fileName+".enc", password); err != nil {
 		t.Fatalf("DecryptFile failed: %s", err)
 	}
 	gotContents := mustReadFile(t, fileName)

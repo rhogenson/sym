@@ -1,4 +1,4 @@
-package sym
+package main
 
 import (
 	"crypto/pbkdf2"

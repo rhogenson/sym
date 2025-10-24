@@ -1,4 +1,4 @@
-package sym
+package main
 
 import (
 	"bytes"
@@ -28,7 +28,7 @@ func TestOAEReadWrite(t *testing.T) {
 	if _, err := io.WriteString(writer, input); err != nil {
 		t.Fatalf("Failed to write: %s", err)
 	}
-	if err := writer.Close(); err != nil {
+	if err := writer.close(); err != nil {
 		t.Fatalf("writer.Close() failed: %s", err)
 	}
 	got, err := io.ReadAll(testEncryptionMetadata.newDecryptingReader(bytes.NewReader(out.Bytes()), password, &testHashMetadata))

@@ -1,4 +1,4 @@
-package sym
+package main
 
 import (
 	"bytes"
@@ -68,9 +68,9 @@ func TestEncryptFile_NoPermission(t *testing.T) {
 func TestEncryptOptions_RegisterFlags(t *testing.T) {
 	t.Parallel()
 
-	var o EncryptOptions
+	var o encryptOptions
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	o.RegisterFlags(fs)
+	o.registerFlags(fs)
 	const cmd = "-g -p asdf -f"
 	fs.Parse(strings.Split(cmd, " "))
 	want := encryptFlags{
@@ -79,7 +79,7 @@ func TestEncryptOptions_RegisterFlags(t *testing.T) {
 		force:            true,
 	}
 	if o.encryptFlags != want {
-		t.Errorf("Command line %q parsed incorrect EncryptOptions, got %+v, want %+v", cmd, o, want)
+		t.Errorf("Command line %q parsed incorrect encryptOptions, got %+v, want %+v", cmd, o, want)
 	}
 }
 
@@ -92,11 +92,11 @@ func TestEncryptOptions_Run(t *testing.T) {
 	mustWriteFile(t, fileName, fileContent)
 	opts := testEncryptOptions
 	opts.password = password
-	if err := opts.Run(fileName); err != nil {
+	if err := opts.run(fileName); err != nil {
 		t.Fatalf("enc failed: %s", err)
 	}
 	mustRemove(t, fileName)
-	if err := DefaultDecryptOptions.decryptFile(fileName+".enc", password); err != nil {
+	if err := defaultDecryptOptions.decryptFile(fileName+".enc", password); err != nil {
 		t.Fatalf("Failed to decrypt encrypted file: %s", err)
 	}
 	gotFileContents := mustReadFile(t, fileName)
@@ -132,8 +132,8 @@ func TestEncryptOptions_Run_UsageError(t *testing.T) {
 			opts := testEncryptOptions
 			opts.generatePassword = tc.generatePassword
 			opts.password = tc.password
-			if err := opts.Run(tc.files...); err == nil {
-				t.Errorf("Run(%+v) succeeded, want error", opts)
+			if err := opts.run(tc.files...); err == nil {
+				t.Errorf("run(%+v) succeeded, want error", opts)
 			}
 		})
 	}
@@ -150,12 +150,12 @@ func TestEncryptOptions_Run_GeneratePassword(t *testing.T) {
 	opts := testEncryptOptions
 	opts.generatePassword = true
 	opts.passwordOut = password
-	if err := opts.Run(fileName); err != nil {
+	if err := opts.run(fileName); err != nil {
 		t.Fatalf("enc(%+v) failed: %s", opts, err)
 	}
 	pw := password.String()
 	mustRemove(t, fileName)
-	if err := DefaultDecryptOptions.decryptFile(fileName+".enc", pw); err != nil {
+	if err := defaultDecryptOptions.decryptFile(fileName+".enc", pw); err != nil {
 		t.Fatalf("Failed to decrypt encrypted file with generated password %q: %s", pw, err)
 	}
 	gotFileContents := mustReadFile(t, fileName)
@@ -176,7 +176,7 @@ func TestEncryptOptions_Run_Stdin(t *testing.T) {
 	opts.password = password
 	opts.stdin = strings.NewReader(input)
 	opts.stdout = stdout
-	if err := opts.Run(); err != nil {
+	if err := opts.run(); err != nil {
 		t.Errorf("enc(+%v) failed: %s", opts, err)
 	}
 	got := new(strings.Builder)
@@ -233,9 +233,9 @@ func TestEncryptOptions_Run_ReadPassword(t *testing.T) {
 				passwordI++
 				return pw, nil
 			}
-			err := opts.Run(fileName)
+			err := opts.run(fileName)
 			if gotErr := err != nil; gotErr != tc.wantErr {
-				t.Errorf("EncryptOptions.Run returned error %v, want error? %t", err, tc.wantErr)
+				t.Errorf("encryptOptions.run returned error %v, want error? %t", err, tc.wantErr)
 			}
 		})
 	}

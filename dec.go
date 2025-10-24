@@ -1,4 +1,4 @@
-package sym
+package main
 
 import (
 	"encoding/binary"
@@ -34,12 +34,12 @@ type decryptFlags struct {
 	force    bool
 }
 
-func (f *decryptFlags) RegisterFlags(fs *flag.FlagSet) {
+func (f *decryptFlags) registerFlags(fs *flag.FlagSet) {
 	fs.StringVar(&f.password, "p", "", "use the specified password; if not provided, dec will prompt for a password")
 	fs.BoolVar(&f.force, "f", false, "overwrite output files even if they already exist")
 }
 
-type DecryptOptions struct {
+type decryptOptions struct {
 	decryptFlags
 
 	passwordIn func() (string, error)
@@ -47,13 +47,13 @@ type DecryptOptions struct {
 	stdout     io.Writer
 }
 
-var DefaultDecryptOptions = DecryptOptions{
+var defaultDecryptOptions = decryptOptions{
 	passwordIn: termReadPassword,
 	stdin:      os.Stdin,
 	stdout:     os.Stdout,
 }
 
-func (o *DecryptOptions) decryptFile(fileName string, password string) (err error) {
+func (o *decryptOptions) decryptFile(fileName string, password string) (err error) {
 	var outFileName string
 	if name, ok := strings.CutSuffix(fileName, ".enc"); ok {
 		outFileName = name
@@ -92,14 +92,14 @@ func (o *DecryptOptions) decryptFile(fileName string, password string) (err erro
 	return fOut.Close()
 }
 
-func (o *DecryptOptions) readPassword() (string, error) {
+func (o *decryptOptions) readPassword() (string, error) {
 	fmt.Fprint(os.Stderr, "Enter password: ")
 	pw, err := o.passwordIn()
 	fmt.Fprintln(os.Stderr)
 	return pw, err
 }
 
-func (o *DecryptOptions) Run(args ...string) error {
+func (o *decryptOptions) run(args ...string) error {
 	if len(args) == 0 && o.password == "" {
 		return fmt.Errorf("-p is required when reading from stdin")
 	}

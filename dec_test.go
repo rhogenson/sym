@@ -1,4 +1,4 @@
-package sym
+package main
 
 import (
 	"bytes"
@@ -36,7 +36,7 @@ func TestDecryptFile_Force(t *testing.T) {
 			if err := testEncryptOptions.encryptFile(fileName, password); err != nil {
 				t.Fatalf("Failed to encrypt file: %s", err)
 			}
-			decOpts := DefaultDecryptOptions
+			decOpts := defaultDecryptOptions
 			decOpts.force = tc.force
 			err := decOpts.decryptFile(fileName+".enc", password)
 			if gotErr := err != nil; gotErr != tc.wantErr {
@@ -152,7 +152,7 @@ func TestDecrypt_BadFileFormat(t *testing.T) {
 
 			fileName := filepath.Join(t.TempDir(), "file")
 			mustWriteFile(t, fileName, tc.fileContent)
-			err := DefaultDecryptOptions.decryptFile(fileName, "asdf")
+			err := defaultDecryptOptions.decryptFile(fileName, "asdf")
 			if err == nil {
 				t.Errorf("DecryptFile succeeded for incorrect file format, want error")
 			}
@@ -171,7 +171,7 @@ func TestDecryptFile_WeirdName(t *testing.T) {
 		t.Fatalf("EncryptFile failed: %s", err)
 	}
 	mustRename(t, fileName+".enc", fileName+".encrypted")
-	if err := DefaultDecryptOptions.decryptFile(fileName+".encrypted", password); err != nil {
+	if err := defaultDecryptOptions.decryptFile(fileName+".encrypted", password); err != nil {
 		t.Fatalf("DecryptFile failed: %s", err)
 	}
 	gotContents := mustReadFile(t, fileName+".encrypted.dec")
@@ -183,7 +183,7 @@ func TestDecryptFile_WeirdName(t *testing.T) {
 func TestDecryptFile_NotFound(t *testing.T) {
 	t.Parallel()
 
-	err := DefaultDecryptOptions.decryptFile("my-nonexistent-file.txt", "asdf")
+	err := defaultDecryptOptions.decryptFile("my-nonexistent-file.txt", "asdf")
 	if err == nil {
 		t.Fatal("decryptFile succeeded for nonexistent file, want error")
 	}
@@ -196,7 +196,7 @@ func TestDecryptFile_NoPermission(t *testing.T) {
 	mustWriteFile(t, fileName, []byte("test file content"))
 	mustWriteFile(t, strings.TrimSuffix(fileName, ".enc"), nil)
 	mustChmod(t, strings.TrimSuffix(fileName, ".enc"), 0400)
-	opts := DefaultDecryptOptions
+	opts := defaultDecryptOptions
 	opts.force = true
 	err := opts.decryptFile(fileName, "asdf")
 	if err == nil {
@@ -207,9 +207,9 @@ func TestDecryptFile_NoPermission(t *testing.T) {
 func TestDecryptOptions_RegisterFlags(t *testing.T) {
 	t.Parallel()
 
-	var o DecryptOptions
+	var o decryptOptions
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	o.RegisterFlags(fs)
+	o.registerFlags(fs)
 	const cmd = "-p asdf -f"
 	fs.Parse(strings.Split(cmd, " "))
 	want := decryptFlags{
@@ -217,7 +217,7 @@ func TestDecryptOptions_RegisterFlags(t *testing.T) {
 		force:    true,
 	}
 	if o.decryptFlags != want {
-		t.Errorf("Command line %q parsed incorrect DecryptOptions, got %+v, want %+v", cmd, o, want)
+		t.Errorf("Command line %q parsed incorrect decryptOptions, got %+v, want %+v", cmd, o, want)
 	}
 }
 
@@ -232,22 +232,22 @@ func TestDecryptOptions_Run(t *testing.T) {
 		t.Errorf("EncryptFile failed: %s", err)
 	}
 	mustRemove(t, fileName)
-	opts := DefaultDecryptOptions
+	opts := defaultDecryptOptions
 	opts.password = password
-	err := opts.Run(fileName + ".enc")
+	err := opts.run(fileName + ".enc")
 	if err != nil {
 		t.Errorf("dec failed: %s", err)
 	}
 	gotFileContents := mustReadFile(t, fileName)
 	if !bytes.Equal(gotFileContents, fileContent) {
-		t.Errorf("Run returned incorrect contents %q, want %q", gotFileContents, fileContent)
+		t.Errorf("run returned incorrect contents %q, want %q", gotFileContents, fileContent)
 	}
 }
 
 func TestDecryptOptions_Run_UsageError(t *testing.T) {
 	t.Parallel()
 
-	err := DefaultDecryptOptions.Run()
+	err := defaultDecryptOptions.run()
 	if err == nil {
 		t.Errorf("Run without -p when reading from stdin, want error")
 	}
@@ -256,11 +256,11 @@ func TestDecryptOptions_Run_UsageError(t *testing.T) {
 func TestDecryptOptions_Run_NotFound(t *testing.T) {
 	t.Parallel()
 
-	opts := DefaultDecryptOptions
+	opts := defaultDecryptOptions
 	opts.password = "asdf"
-	err := opts.Run("my-nonexistent-file-name.txt")
+	err := opts.run("my-nonexistent-file-name.txt")
 	if err == nil {
-		t.Errorf("Run succeeded with nonexistent file, want error")
+		t.Errorf("run succeeded with nonexistent file, want error")
 	}
 }
 
@@ -274,12 +274,12 @@ func TestDecryptOptions_Run_Stdin(t *testing.T) {
 		t.Fatalf("Failed to encrypt: %s", err)
 	}
 	gotContentBuf := new(bytes.Buffer)
-	opts := DefaultDecryptOptions
+	opts := defaultDecryptOptions
 	opts.password = password
 	opts.stdin = bytes.NewReader(encrypted.Bytes())
 	opts.stdout = gotContentBuf
-	if err := opts.Run(); err != nil {
-		t.Fatalf("Run failed: %s", err)
+	if err := opts.run(); err != nil {
+		t.Fatalf("run failed: %s", err)
 	}
 	gotContent := gotContentBuf.Bytes()
 	if !bytes.Equal(gotContent, content) {
@@ -313,13 +313,13 @@ func TestDecryptOptions_Run_ReadPassword(t *testing.T) {
 			}
 			mustRemove(t, fileName)
 
-			opts := DefaultDecryptOptions
+			opts := defaultDecryptOptions
 			opts.passwordIn = func() (string, error) {
 				return password, tc.err
 			}
-			err := opts.Run(fileName + ".enc")
+			err := opts.run(fileName + ".enc")
 			if gotErr := err != nil; gotErr != tc.wantErr {
-				t.Errorf("DecryptOptions.Run returned error %v reading password from stdin, want error? %t", err, tc.wantErr)
+				t.Errorf("decryptOptions.run returned error %v reading password from stdin, want error? %t", err, tc.wantErr)
 			}
 		})
 	}

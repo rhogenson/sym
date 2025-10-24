@@ -1,4 +1,4 @@
-package sym
+package main
 
 import (
 	"crypto/rand"
@@ -19,13 +19,13 @@ type encryptFlags struct {
 	force            bool
 }
 
-func (f *encryptFlags) RegisterFlags(fs *flag.FlagSet) {
+func (f *encryptFlags) registerFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&f.generatePassword, "g", false, "generate a secure password automatically (password will be printed to stderr)")
 	fs.StringVar(&f.password, "p", "", "use the specified password; if not provided, enc will prompt for a password")
 	fs.BoolVar(&f.force, "f", false, "overwrite output files even if they already exist")
 }
 
-type EncryptOptions struct {
+type encryptOptions struct {
 	encryptFlags
 
 	iterations  int
@@ -35,7 +35,7 @@ type EncryptOptions struct {
 	stdout      io.Writer
 }
 
-var DefaultEncryptOptions = EncryptOptions{
+var defaultEncryptOptions = encryptOptions{
 	iterations:  defaultPBKDF2Iters,
 	passwordIn:  termReadPassword,
 	passwordOut: os.Stderr,
@@ -43,7 +43,7 @@ var DefaultEncryptOptions = EncryptOptions{
 	stdout:      os.Stdout,
 }
 
-func (o *EncryptOptions) encrypt(w io.Writer, r io.Reader, password string) error {
+func (o *encryptOptions) encrypt(w io.Writer, r io.Reader, password string) error {
 	if _, err := io.WriteString(w, magic); err != nil {
 		return err
 	}
@@ -66,10 +66,10 @@ func (o *EncryptOptions) encrypt(w io.Writer, r io.Reader, password string) erro
 	if _, err := io.Copy(writer, r); err != nil {
 		return err
 	}
-	return writer.Close()
+	return writer.close()
 }
 
-func (o *EncryptOptions) encryptFile(fileName string, password string) (err error) {
+func (o *encryptOptions) encryptFile(fileName string, password string) (err error) {
 	f, err := os.Open(fileName)
 	if err != nil {
 		return err
@@ -100,7 +100,7 @@ func (o *EncryptOptions) encryptFile(fileName string, password string) (err erro
 	return fOut.Close()
 }
 
-func (o *EncryptOptions) readPassword() (string, error) {
+func (o *encryptOptions) readPassword() (string, error) {
 	const maxAttempts = 3
 	for i := 1; i <= maxAttempts; i++ {
 		fmt.Fprint(os.Stderr, "Enter password")
@@ -132,7 +132,7 @@ func (o *EncryptOptions) readPassword() (string, error) {
 	return "", fmt.Errorf("too many attempts")
 }
 
-func (o *EncryptOptions) Run(args ...string) error {
+func (o *encryptOptions) run(args ...string) error {
 	if o.generatePassword && o.password != "" {
 		return fmt.Errorf("-g and -p cannot be used together")
 	}
