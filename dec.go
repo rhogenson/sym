@@ -10,7 +10,7 @@ import (
 )
 
 func (o *decryptOptions) decrypt(w io.Writer, r io.Reader, password string) error {
-	_, err := io.Copy(w, newDecryptingReader(r, password, o.iterations))
+	_, err := io.Copy(w, newDecryptingReader(r, password, o.memory))
 	return err
 }
 
@@ -27,14 +27,14 @@ func (f *decryptFlags) registerFlags(fs *flag.FlagSet) {
 type decryptOptions struct {
 	decryptFlags
 
-	iterations int
+	memory     int
 	passwordIn func() (string, error)
 	stdin      io.Reader
 	stdout     io.Writer
 }
 
 var defaultDecryptOptions = decryptOptions{
-	iterations: defaultPBKDF2Iters,
+	memory:     defaultArgon2Memory,
 	passwordIn: termReadPassword,
 	stdin:      os.Stdin,
 	stdout:     os.Stdout,

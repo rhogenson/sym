@@ -28,7 +28,7 @@ func (f *encryptFlags) registerFlags(fs *flag.FlagSet) {
 type encryptOptions struct {
 	encryptFlags
 
-	iterations  int
+	memory      int
 	passwordIn  func() (string, error)
 	passwordOut io.Writer
 	stdin       io.Reader
@@ -36,7 +36,7 @@ type encryptOptions struct {
 }
 
 var defaultEncryptOptions = encryptOptions{
-	iterations:  defaultPBKDF2Iters,
+	memory:      defaultArgon2Memory,
 	passwordIn:  termReadPassword,
 	passwordOut: os.Stderr,
 	stdin:       os.Stdin,
@@ -44,7 +44,7 @@ var defaultEncryptOptions = encryptOptions{
 }
 
 func (o *encryptOptions) encrypt(w io.Writer, r io.Reader, password string) error {
-	writer := newEncryptingWriter(w, password, o.iterations)
+	writer := newEncryptingWriter(w, password, o.memory)
 	if _, err := io.Copy(writer, r); err != nil {
 		return err
 	}

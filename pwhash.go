@@ -1,17 +1,16 @@
 package main
 
 import (
-	"crypto/pbkdf2"
-	"crypto/sha256"
 	"os"
 
+	"golang.org/x/crypto/argon2"
 	"golang.org/x/term"
 )
 
-const defaultPBKDF2Iters = 35_000_000
+const defaultArgon2Memory = 64 * 1024
 
-func hashPassword(password string, salt []byte, iters int) ([]byte, error) {
-	return pbkdf2.Key(sha256.New, password, salt, iters, 32)
+func hashPassword(password string, salt []byte, memory int) ([]byte, error) {
+	return argon2.IDKey([]byte(password), salt, 1, uint32(memory), 4, 32), nil
 }
 
 func termReadPassword() (string, error) {

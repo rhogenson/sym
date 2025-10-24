@@ -9,13 +9,13 @@ import (
 
 var testEncryptOptions = func() encryptOptions {
 	opts := defaultEncryptOptions
-	opts.iterations = 10
+	opts.memory = 1
 	return opts
 }()
 
 var testDecryptOptions = func() decryptOptions {
 	opts := defaultDecryptOptions
-	opts.iterations = 10
+	opts.memory = 1
 	return opts
 }()
 
