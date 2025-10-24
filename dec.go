@@ -10,7 +10,7 @@ import (
 )
 
 func (o *decryptOptions) decrypt(w io.Writer, r io.Reader, password string) error {
-	_, err := io.Copy(w, newDecryptingReader(r, password, o.memory))
+	_, err := io.Copy(w, newDecryptingReader(r, password))
 	return err
 }
 
@@ -27,24 +27,14 @@ func (f *decryptFlags) registerFlags(fs *flag.FlagSet) {
 type decryptOptions struct {
 	decryptFlags
 
-	memory     int
 	passwordIn func() (string, error)
 	stdin      io.Reader
 	stdout     io.Writer
 }
 
-var defaultDecryptOptions = decryptOptions{
-	memory:     defaultArgon2Memory,
-	passwordIn: termReadPassword,
-	stdin:      os.Stdin,
-	stdout:     os.Stdout,
-}
-
 func (o *decryptOptions) decryptFile(fileName string, password string) (err error) {
 	var outFileName string
 	if name, ok := strings.CutSuffix(fileName, ".enc"); ok {
-		outFileName = name
-	} else if name, ok := strings.CutSuffix(fileName, ".enc.txt"); ok {
 		outFileName = name
 	} else {
 		outFileName = fileName + ".dec"

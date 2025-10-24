@@ -28,23 +28,14 @@ func (f *encryptFlags) registerFlags(fs *flag.FlagSet) {
 type encryptOptions struct {
 	encryptFlags
 
-	memory      int
 	passwordIn  func() (string, error)
 	passwordOut io.Writer
 	stdin       io.Reader
 	stdout      io.Writer
 }
 
-var defaultEncryptOptions = encryptOptions{
-	memory:      defaultArgon2Memory,
-	passwordIn:  termReadPassword,
-	passwordOut: os.Stderr,
-	stdin:       os.Stdin,
-	stdout:      os.Stdout,
-}
-
 func (o *encryptOptions) encrypt(w io.Writer, r io.Reader, password string) error {
-	writer := newEncryptingWriter(w, password, o.memory)
+	writer := newEncryptingWriter(w, password)
 	if _, err := io.Copy(writer, r); err != nil {
 		return err
 	}

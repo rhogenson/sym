@@ -22,17 +22,13 @@ const (
 
 type segmentEncrypter struct {
 	password string
-	memory   int
 
 	aead  cipher.AEAD
 	nonce [nonceSize]byte
 }
 
 func (se *segmentEncrypter) initialize(salt []byte) error {
-	key, err := hashPassword(se.password, salt, se.memory)
-	if err != nil {
-		return err
-	}
+	key := hashPassword(se.password, salt)
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return err
@@ -83,12 +79,11 @@ type encryptingWriter struct {
 	initialized bool
 }
 
-func newEncryptingWriter(w io.Writer, password string, memory int) *encryptingWriter {
+func newEncryptingWriter(w io.Writer, password string) *encryptingWriter {
 	return &encryptingWriter{
 		w: w,
 		encrypter: segmentEncrypter{
 			password: password,
-			memory:   memory,
 		},
 	}
 }
@@ -181,12 +176,11 @@ type decryptingReader struct {
 	readFinalBlock bool
 }
 
-func newDecryptingReader(r io.Reader, password string, memory int) *decryptingReader {
+func newDecryptingReader(r io.Reader, password string) *decryptingReader {
 	return &decryptingReader{
 		r: bufio.NewReaderSize(r, 0), // we only need .UnreadByte
 		decrypter: segmentEncrypter{
 			password: password,
-			memory:   memory,
 		},
 	}
 }

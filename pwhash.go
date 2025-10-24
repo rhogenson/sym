@@ -7,10 +7,10 @@ import (
 	"golang.org/x/term"
 )
 
-const defaultArgon2Memory = 64 * 1024
+var argon2Memory = 64 * 1024
 
-func hashPassword(password string, salt []byte, memory int) ([]byte, error) {
-	return argon2.IDKey([]byte(password), salt, 1, uint32(memory), 4, 32), nil
+func hashPassword(password string, salt []byte) []byte {
+	return argon2.IDKey([]byte(password), salt, 1, uint32(argon2Memory), 4, 32)
 }
 
 func termReadPassword() (string, error) {

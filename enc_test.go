@@ -31,9 +31,7 @@ func TestEncryptFile_Force(t *testing.T) {
 			fileName := filepath.Join(t.TempDir(), "file")
 			mustWriteFile(t, fileName, []byte("test file content"))
 			mustWriteFile(t, fileName+".enc", []byte("file already exists"))
-			encOpts := testEncryptOptions
-			encOpts.force = tc.force
-			err := encOpts.encryptFile(fileName, "asdf")
+			err := (&encryptOptions{encryptFlags: encryptFlags{force: tc.force}}).encryptFile(fileName, "asdf")
 			if gotErr := err != nil; gotErr != tc.wantErr {
 				t.Errorf("EncryptFile(force=%t) returned returned error %v when output file exists, want error? %t", tc.force, err, tc.wantErr)
 			}
@@ -44,7 +42,7 @@ func TestEncryptFile_Force(t *testing.T) {
 func TestEncryptFile_NotFound(t *testing.T) {
 	t.Parallel()
 
-	err := testEncryptOptions.encryptFile("my-nonexistent-file.txt", "asdf")
+	err := (&encryptOptions{}).encryptFile("my-nonexistent-file.txt", "asdf")
 	if err == nil {
 		t.Fatal("encryptFile succeeded for nonexistent file, want error")
 	}
@@ -57,9 +55,7 @@ func TestEncryptFile_NoPermission(t *testing.T) {
 	mustWriteFile(t, fileName, []byte("test file content"))
 	mustWriteFile(t, fileName+".enc", nil)
 	mustChmod(t, fileName+".enc", 0400)
-	opts := testEncryptOptions
-	opts.force = true
-	err := opts.encryptFile(fileName, "asdf")
+	err := (&encryptOptions{encryptFlags: encryptFlags{force: true}}).encryptFile(fileName, "asdf")
 	if err == nil {
 		t.Fatal("encryptFile succeeded for unwritable file, want error")
 	}
@@ -90,13 +86,11 @@ func TestEncryptOptions_Run(t *testing.T) {
 	fileContent := []byte("test file content")
 	fileName := filepath.Join(t.TempDir(), "file")
 	mustWriteFile(t, fileName, fileContent)
-	opts := testEncryptOptions
-	opts.password = password
-	if err := opts.run(fileName); err != nil {
+	if err := (&encryptOptions{encryptFlags: encryptFlags{password: password}}).run(fileName); err != nil {
 		t.Fatalf("enc failed: %s", err)
 	}
 	mustRemove(t, fileName)
-	if err := testDecryptOptions.decryptFile(fileName+".enc", password); err != nil {
+	if err := (&decryptOptions{}).decryptFile(fileName+".enc", password); err != nil {
 		t.Fatalf("Failed to decrypt encrypted file: %s", err)
 	}
 	gotFileContents := mustReadFile(t, fileName)
@@ -129,11 +123,12 @@ func TestEncryptOptions_Run_UsageError(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
 
-			opts := testEncryptOptions
-			opts.generatePassword = tc.generatePassword
-			opts.password = tc.password
+			opts := &encryptOptions{encryptFlags: encryptFlags{
+				generatePassword: tc.generatePassword,
+				password:         tc.password,
+			}}
 			if err := opts.run(tc.files...); err == nil {
-				t.Errorf("run(%+v) succeeded, want error", opts)
+				t.Errorf("encryptOptions.run(%+v) succeeded, want error", opts)
 			}
 		})
 	}
@@ -147,15 +142,16 @@ func TestEncryptOptions_Run_GeneratePassword(t *testing.T) {
 	mustWriteFile(t, fileName, fileContent)
 
 	password := new(strings.Builder)
-	opts := testEncryptOptions
-	opts.generatePassword = true
-	opts.passwordOut = password
+	opts := &encryptOptions{
+		encryptFlags: encryptFlags{generatePassword: true},
+		passwordOut:  password,
+	}
 	if err := opts.run(fileName); err != nil {
-		t.Fatalf("enc(%+v) failed: %s", opts, err)
+		t.Fatalf("encryptOptions.run(%+v) failed: %s", opts, err)
 	}
 	pw := password.String()
 	mustRemove(t, fileName)
-	if err := testDecryptOptions.decryptFile(fileName+".enc", pw); err != nil {
+	if err := (&decryptOptions{}).decryptFile(fileName+".enc", pw); err != nil {
 		t.Fatalf("Failed to decrypt encrypted file with generated password %q: %s", pw, err)
 	}
 	gotFileContents := mustReadFile(t, fileName)
@@ -172,15 +168,15 @@ func TestEncryptOptions_Run_Stdin(t *testing.T) {
 		password = "asdf"
 	)
 	stdout := new(strings.Builder)
-	opts := testEncryptOptions
-	opts.password = password
-	opts.stdin = strings.NewReader(input)
-	opts.stdout = stdout
-	if err := opts.run(); err != nil {
-		t.Errorf("enc(+%v) failed: %s", opts, err)
+	if err := (&encryptOptions{
+		encryptFlags: encryptFlags{password: password},
+		stdin:        strings.NewReader(input),
+		stdout:       stdout,
+	}).run(); err != nil {
+		t.Errorf("encryptOptions.run failed: %s", err)
 	}
 	got := new(strings.Builder)
-	if err := testDecryptOptions.decrypt(got, strings.NewReader(stdout.String()), password); err != nil {
+	if err := (&decryptOptions{}).decrypt(got, strings.NewReader(stdout.String()), password); err != nil {
 		t.Errorf("Failed to decrypt stdout content %q: %s", stdout, err)
 	}
 	if got, want := got.String(), input; got != want {
@@ -223,17 +219,17 @@ func TestEncryptOptions_Run_ReadPassword(t *testing.T) {
 			fileName := filepath.Join(t.TempDir(), "file")
 			mustWriteFile(t, fileName, []byte("test file content"))
 
-			opts := testEncryptOptions
 			passwordI := 0
-			opts.passwordIn = func() (string, error) {
-				if passwordI == len(tc.passwords) && tc.err != nil {
-					return "", tc.err
-				}
-				pw := tc.passwords[passwordI%len(tc.passwords)]
-				passwordI++
-				return pw, nil
-			}
-			err := opts.run(fileName)
+			err := (&encryptOptions{
+				passwordIn: func() (string, error) {
+					if passwordI == len(tc.passwords) && tc.err != nil {
+						return "", tc.err
+					}
+					pw := tc.passwords[passwordI%len(tc.passwords)]
+					passwordI++
+					return pw, nil
+				},
+			}).run(fileName)
 			if gotErr := err != nil; gotErr != tc.wantErr {
 				t.Errorf("encryptOptions.run returned error %v, want error? %t", err, tc.wantErr)
 			}

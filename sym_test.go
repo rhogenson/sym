@@ -7,17 +7,9 @@ import (
 	"testing"
 )
 
-var testEncryptOptions = func() encryptOptions {
-	opts := defaultEncryptOptions
-	opts.memory = 1
-	return opts
-}()
-
-var testDecryptOptions = func() decryptOptions {
-	opts := defaultDecryptOptions
-	opts.memory = 1
-	return opts
-}()
+func init() {
+	argon2Memory = 1
+}
 
 func mustWriteFile(t *testing.T, path string, content []byte) {
 	t.Helper()
@@ -67,11 +59,11 @@ func TestEncryptDecrypt(t *testing.T) {
 	fileName := filepath.Join(t.TempDir(), "file")
 	mustWriteFile(t, fileName, buf)
 	const password = "karp cache tidal mars fed rajah uses graze pobox flew"
-	if err := testEncryptOptions.encryptFile(fileName, password); err != nil {
+	if err := (&encryptOptions{}).encryptFile(fileName, password); err != nil {
 		t.Fatalf("EncryptFile failed: %s", err)
 	}
 	mustRemove(t, fileName)
-	if err := testDecryptOptions.decryptFile(fileName+".enc", password); err != nil {
+	if err := (&decryptOptions{}).decryptFile(fileName+".enc", password); err != nil {
 		t.Fatalf("DecryptFile failed: %s", err)
 	}
 	gotContents := mustReadFile(t, fileName)

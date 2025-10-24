@@ -15,9 +15,18 @@ type subcommand interface {
 func whichSubcommand(name string) (subcommand, bool) {
 	switch filepath.Base(name) {
 	case "enc":
-		return &defaultEncryptOptions, true
+		return &encryptOptions{
+			passwordIn:  termReadPassword,
+			passwordOut: os.Stderr,
+			stdin:       os.Stdin,
+			stdout:      os.Stdout,
+		}, true
 	case "dec":
-		return &defaultDecryptOptions, true
+		return &decryptOptions{
+			passwordIn: termReadPassword,
+			stdin:      os.Stdin,
+			stdout:     os.Stdout,
+		}, true
 	default:
 		return nil, false
 	}
