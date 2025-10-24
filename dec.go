@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/binary"
 	"errors"
 	"flag"
 	"fmt"
@@ -10,22 +9,8 @@ import (
 	"strings"
 )
 
-func decrypt(w io.Writer, r io.Reader, password string) error {
-	fileFormat := make([]byte, 4)
-	if _, err := io.ReadFull(r, fileFormat); err != nil {
-		return err
-	}
-	if string(fileFormat) != magic {
-		return fmt.Errorf("bad file format")
-	}
-	header := new(fileMetadata)
-	if err := binary.Read(r, binary.BigEndian, header); err != nil {
-		return err
-	}
-	if err := header.validate(); err != nil {
-		return err
-	}
-	_, err := io.Copy(w, header.EncryptionMetadata.newDecryptingReader(r, password, &header.HashMetadata))
+func (o *decryptOptions) decrypt(w io.Writer, r io.Reader, password string) error {
+	_, err := io.Copy(w, newDecryptingReader(r, password, o.iterations))
 	return err
 }
 
@@ -42,12 +27,14 @@ func (f *decryptFlags) registerFlags(fs *flag.FlagSet) {
 type decryptOptions struct {
 	decryptFlags
 
+	iterations int
 	passwordIn func() (string, error)
 	stdin      io.Reader
 	stdout     io.Writer
 }
 
 var defaultDecryptOptions = decryptOptions{
+	iterations: defaultPBKDF2Iters,
 	passwordIn: termReadPassword,
 	stdin:      os.Stdin,
 	stdout:     os.Stdout,
@@ -86,7 +73,7 @@ func (o *decryptOptions) decryptFile(fileName string, password string) (err erro
 			os.Remove(fOut.Name())
 		}
 	}()
-	if err := decrypt(fOut, fIn, password); err != nil {
+	if err := o.decrypt(fOut, fIn, password); err != nil {
 		return fmt.Errorf("decrypt %q: %s", fileName, err)
 	}
 	return fOut.Close()
@@ -114,7 +101,7 @@ func (o *decryptOptions) run(args ...string) error {
 		}
 	}
 	if len(args) == 0 {
-		return decrypt(o.stdout, o.stdin, password)
+		return o.decrypt(o.stdout, o.stdin, password)
 	}
 	for _, fileName := range args {
 		if err := o.decryptFile(fileName, password); err != nil {

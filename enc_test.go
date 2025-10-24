@@ -96,7 +96,7 @@ func TestEncryptOptions_Run(t *testing.T) {
 		t.Fatalf("enc failed: %s", err)
 	}
 	mustRemove(t, fileName)
-	if err := defaultDecryptOptions.decryptFile(fileName+".enc", password); err != nil {
+	if err := testDecryptOptions.decryptFile(fileName+".enc", password); err != nil {
 		t.Fatalf("Failed to decrypt encrypted file: %s", err)
 	}
 	gotFileContents := mustReadFile(t, fileName)
@@ -155,7 +155,7 @@ func TestEncryptOptions_Run_GeneratePassword(t *testing.T) {
 	}
 	pw := password.String()
 	mustRemove(t, fileName)
-	if err := defaultDecryptOptions.decryptFile(fileName+".enc", pw); err != nil {
+	if err := testDecryptOptions.decryptFile(fileName+".enc", pw); err != nil {
 		t.Fatalf("Failed to decrypt encrypted file with generated password %q: %s", pw, err)
 	}
 	gotFileContents := mustReadFile(t, fileName)
@@ -180,7 +180,7 @@ func TestEncryptOptions_Run_Stdin(t *testing.T) {
 		t.Errorf("enc(+%v) failed: %s", opts, err)
 	}
 	got := new(strings.Builder)
-	if err := decrypt(got, strings.NewReader(stdout.String()), password); err != nil {
+	if err := testDecryptOptions.decrypt(got, strings.NewReader(stdout.String()), password); err != nil {
 		t.Errorf("Failed to decrypt stdout content %q: %s", stdout, err)
 	}
 	if got, want := got.String(), input; got != want {

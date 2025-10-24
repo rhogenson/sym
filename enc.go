@@ -44,25 +44,7 @@ var defaultEncryptOptions = encryptOptions{
 }
 
 func (o *encryptOptions) encrypt(w io.Writer, r io.Reader, password string) error {
-	if _, err := io.WriteString(w, magic); err != nil {
-		return err
-	}
-	header := &fileMetadata{
-		Version: 0,
-		HashMetadata: hashMetadata{
-			PasswordHashType: pwHashPBKDF2_HMAC_SHA256,
-			Iterations:       int32(o.iterations),
-			SaltSize:         defaultSaltSize,
-		},
-		EncryptionMetadata: encryptionMetadata{
-			EncryptionType: encryptionAlgAES256_GCM,
-			SegmentSize:    defaultSegmentSize,
-		},
-	}
-	if err := binary.Write(w, binary.BigEndian, header); err != nil {
-		return err
-	}
-	writer := header.EncryptionMetadata.newEncryptingWriter(w, password, &header.HashMetadata)
+	writer := newEncryptingWriter(w, password, o.iterations)
 	if _, err := io.Copy(writer, r); err != nil {
 		return err
 	}

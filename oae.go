@@ -7,7 +7,6 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"errors"
-	"fmt"
 	"io"
 )
 
@@ -15,49 +14,22 @@ const (
 	nonceSize    = 12
 	aeadOverhead = 16
 
-	defaultSegmentSize = 1024 * 1024
+	segmentSize          = 1024 * 1024
+	plaintextSegmentSize = segmentSize - aeadOverhead
 
-	defaultSaltSize = 32
+	saltSize = 32
 )
-
-//go:generate go tool stringer -type=encryptionAlg -linecomment
-type encryptionAlg int8
-
-const (
-	encryptionAlgInvalid    encryptionAlg = iota
-	encryptionAlgAES256_GCM               // AES-256-GCM
-)
-
-type encryptionMetadata struct {
-	EncryptionType encryptionAlg
-	SegmentSize    int32
-}
-
-func (e *encryptionMetadata) validate() error {
-	if e.EncryptionType != encryptionAlgAES256_GCM {
-		return fmt.Errorf("invalid encryption alg %q", e.EncryptionType)
-	}
-	if e.SegmentSize <= 0 || e.SegmentSize > defaultSegmentSize {
-		return fmt.Errorf("segment size too long")
-	}
-	return nil
-}
-
-func (e *encryptionMetadata) plaintextSegmentSize() int {
-	return int(e.SegmentSize) - aeadOverhead
-}
 
 type segmentEncrypter struct {
-	hashMetadata       hashMetadata
-	encryptionMetadata encryptionMetadata
-	password           string
+	password   string
+	iterations int
 
 	aead  cipher.AEAD
 	nonce [nonceSize]byte
 }
 
 func (se *segmentEncrypter) initialize(salt []byte) error {
-	key, err := se.hashMetadata.hashPassword(se.password, salt)
+	key, err := hashPassword(se.password, salt, se.iterations)
 	if err != nil {
 		return err
 	}
@@ -111,13 +83,12 @@ type encryptingWriter struct {
 	initialized bool
 }
 
-func (e *encryptionMetadata) newEncryptingWriter(w io.Writer, password string, passwordMetadata *hashMetadata) *encryptingWriter {
+func newEncryptingWriter(w io.Writer, password string, iterations int) *encryptingWriter {
 	return &encryptingWriter{
 		w: w,
 		encrypter: segmentEncrypter{
-			hashMetadata:       *passwordMetadata,
-			encryptionMetadata: *e,
-			password:           password,
+			password:   password,
+			iterations: iterations,
 		},
 	}
 }
@@ -126,7 +97,7 @@ func (w *encryptingWriter) initialize() error {
 	if w.initialized {
 		return nil
 	}
-	header := make([]byte, w.encrypter.hashMetadata.SaltSize)
+	header := make([]byte, saltSize)
 	rand.Read(header)
 	if err := w.encrypter.initialize(header); err != nil {
 		return err
@@ -134,7 +105,7 @@ func (w *encryptingWriter) initialize() error {
 	if _, err := w.w.Write(header); err != nil {
 		return err
 	}
-	w.buf = make([]byte, 0, w.encrypter.encryptionMetadata.SegmentSize)
+	w.buf = make([]byte, 0, segmentSize)
 	w.initialized = true
 	return nil
 }
@@ -157,12 +128,12 @@ func (w *encryptingWriter) Write(buf []byte) (int, error) {
 	}
 	nn := 0
 	for len(buf) > 0 {
-		if len(w.buf) == w.encrypter.encryptionMetadata.plaintextSegmentSize() {
+		if len(w.buf) == plaintextSegmentSize {
 			if err := w.writeBuf(false); err != nil {
 				return nn, err
 			}
 		}
-		n := copy(w.buf[len(w.buf):w.encrypter.encryptionMetadata.plaintextSegmentSize()], buf)
+		n := copy(w.buf[len(w.buf):plaintextSegmentSize], buf)
 		nn += n
 		w.buf = w.buf[:len(w.buf)+n]
 		buf = buf[n:]
@@ -183,7 +154,7 @@ func (w *encryptingWriter) ReadFrom(r io.Reader) (int64, error) {
 	}
 	var nn int64
 	for {
-		n, err := io.ReadFull(r, w.buf[len(w.buf):w.encrypter.encryptionMetadata.plaintextSegmentSize()+1])
+		n, err := io.ReadFull(r, w.buf[len(w.buf):plaintextSegmentSize+1])
 		nn += int64(n)
 		w.buf = w.buf[:len(w.buf)+n]
 		if err != nil {
@@ -192,8 +163,8 @@ func (w *encryptingWriter) ReadFrom(r io.Reader) (int64, error) {
 			}
 			return nn, err
 		}
-		nextByte := w.buf[w.encrypter.encryptionMetadata.plaintextSegmentSize()]
-		w.buf = w.buf[:w.encrypter.encryptionMetadata.plaintextSegmentSize()]
+		nextByte := w.buf[plaintextSegmentSize]
+		w.buf = w.buf[:plaintextSegmentSize]
 		if err := w.writeBuf(false); err != nil {
 			return nn, err
 		}
@@ -203,19 +174,19 @@ func (w *encryptingWriter) ReadFrom(r io.Reader) (int64, error) {
 }
 
 type decryptingReader struct {
-	r           *bufio.Reader
-	decrypter   segmentEncrypter
-	buf         bytes.Buffer
-	initialized bool
+	r              *bufio.Reader
+	decrypter      segmentEncrypter
+	buf            bytes.Buffer
+	initialized    bool
+	readFinalBlock bool
 }
 
-func (e *encryptionMetadata) newDecryptingReader(r io.Reader, password string, passwordMetadata *hashMetadata) *decryptingReader {
+func newDecryptingReader(r io.Reader, password string, iterations int) *decryptingReader {
 	return &decryptingReader{
 		r: bufio.NewReaderSize(r, 0), // we only need .UnreadByte
 		decrypter: segmentEncrypter{
-			hashMetadata:       *passwordMetadata,
-			encryptionMetadata: *e,
-			password:           password,
+			password:   password,
+			iterations: iterations,
 		},
 	}
 }
@@ -224,7 +195,7 @@ func (r *decryptingReader) initialize() error {
 	if r.initialized {
 		return nil
 	}
-	header := make([]byte, r.decrypter.hashMetadata.SaltSize)
+	header := make([]byte, saltSize)
 	if _, err := io.ReadFull(r.r, header); err != nil {
 		if err == io.EOF {
 			return io.ErrUnexpectedEOF
@@ -234,7 +205,7 @@ func (r *decryptingReader) initialize() error {
 	if err := r.decrypter.initialize(header); err != nil {
 		return err
 	}
-	r.buf = *bytes.NewBuffer(make([]byte, 0, r.decrypter.encryptionMetadata.SegmentSize+1))
+	r.buf = *bytes.NewBuffer(make([]byte, 0, segmentSize+1))
 	r.initialized = true
 	return nil
 }
@@ -242,17 +213,22 @@ func (r *decryptingReader) initialize() error {
 func (r *decryptingReader) fillBuf() error {
 	r.buf.Reset()
 	// Read 1 extra byte to make sure if we're at EOF.
-	buf := r.buf.AvailableBuffer()[:r.decrypter.encryptionMetadata.SegmentSize+1]
+	buf := r.buf.AvailableBuffer()[:segmentSize+1]
 	n, err := io.ReadFull(r.r, buf)
-	if err != nil && err != io.ErrUnexpectedEOF {
+	if err == io.ErrUnexpectedEOF {
+		r.readFinalBlock = true
+	} else if err != nil {
+		if err == io.EOF && !r.readFinalBlock {
+			return errors.New("premature EOF")
+		}
 		return err
 	}
 	buf = buf[:n]
-	if len(buf) == int(r.decrypter.encryptionMetadata.SegmentSize)+1 {
+	if len(buf) == int(segmentSize)+1 {
 		r.r.UnreadByte()
-		buf = buf[:r.decrypter.encryptionMetadata.SegmentSize]
+		buf = buf[:segmentSize]
 	}
-	buf, err = r.decrypter.decrypt(buf[:0], buf, err == io.ErrUnexpectedEOF)
+	buf, err = r.decrypter.decrypt(buf[:0], buf, r.readFinalBlock)
 	if err != nil {
 		return err
 	}

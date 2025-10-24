@@ -13,6 +13,12 @@ var testEncryptOptions = func() encryptOptions {
 	return opts
 }()
 
+var testDecryptOptions = func() decryptOptions {
+	opts := defaultDecryptOptions
+	opts.iterations = 10
+	return opts
+}()
+
 func mustWriteFile(t *testing.T, path string, content []byte) {
 	t.Helper()
 	if err := os.WriteFile(path, content, 0600); err != nil {
@@ -65,7 +71,7 @@ func TestEncryptDecrypt(t *testing.T) {
 		t.Fatalf("EncryptFile failed: %s", err)
 	}
 	mustRemove(t, fileName)
-	if err := defaultDecryptOptions.decryptFile(fileName+".enc", password); err != nil {
+	if err := testDecryptOptions.decryptFile(fileName+".enc", password); err != nil {
 		t.Fatalf("DecryptFile failed: %s", err)
 	}
 	gotContents := mustReadFile(t, fileName)

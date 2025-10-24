@@ -7,16 +7,7 @@ import (
 	"testing"
 )
 
-var testEncryptionMetadata = encryptionMetadata{
-	EncryptionType: encryptionAlgAES256_GCM,
-	SegmentSize:    18,
-}
-
-var testHashMetadata = hashMetadata{
-	PasswordHashType: pwHashPBKDF2_HMAC_SHA256,
-	Iterations:       10,
-	SaltSize:         defaultSaltSize,
-}
+const testIters = 10
 
 func TestOAEReadWrite(t *testing.T) {
 	t.Parallel()
@@ -24,14 +15,14 @@ func TestOAEReadWrite(t *testing.T) {
 	const password = "asdf"
 	input := strings.Repeat("test input", 1024)
 	out := new(bytes.Buffer)
-	writer := testEncryptionMetadata.newEncryptingWriter(out, password, &testHashMetadata)
+	writer := newEncryptingWriter(out, password, testIters)
 	if _, err := io.WriteString(writer, input); err != nil {
 		t.Fatalf("Failed to write: %s", err)
 	}
 	if err := writer.close(); err != nil {
 		t.Fatalf("writer.Close() failed: %s", err)
 	}
-	got, err := io.ReadAll(testEncryptionMetadata.newDecryptingReader(bytes.NewReader(out.Bytes()), password, &testHashMetadata))
+	got, err := io.ReadAll(newDecryptingReader(bytes.NewReader(out.Bytes()), password, testIters))
 	if err != nil {
 		t.Fatalf("Failed to decrypt: %s", err)
 	}

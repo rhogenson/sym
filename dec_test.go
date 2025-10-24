@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/binary"
 	"errors"
 	"flag"
 	"path/filepath"
@@ -36,7 +35,7 @@ func TestDecryptFile_Force(t *testing.T) {
 			if err := testEncryptOptions.encryptFile(fileName, password); err != nil {
 				t.Fatalf("Failed to encrypt file: %s", err)
 			}
-			decOpts := defaultDecryptOptions
+			decOpts := testDecryptOptions
 			decOpts.force = tc.force
 			err := decOpts.decryptFile(fileName+".enc", password)
 			if gotErr := err != nil; gotErr != tc.wantErr {
@@ -44,31 +43,6 @@ func TestDecryptFile_Force(t *testing.T) {
 			}
 		})
 	}
-}
-
-func encodeHeader(t *testing.T, f *fileMetadata) []byte {
-	t.Helper()
-
-	if f.HashMetadata.PasswordHashType == pwHashInvalid {
-		f.HashMetadata.PasswordHashType = pwHashPBKDF2_HMAC_SHA256
-	}
-	if f.HashMetadata.Iterations == 0 {
-		f.HashMetadata.Iterations = 10
-	}
-	if f.HashMetadata.SaltSize == 0 {
-		f.HashMetadata.SaltSize = defaultSaltSize
-	}
-	if f.EncryptionMetadata.EncryptionType == encryptionAlgInvalid {
-		f.EncryptionMetadata.EncryptionType = encryptionAlgAES256_GCM
-	}
-	if f.EncryptionMetadata.SegmentSize == 0 {
-		f.EncryptionMetadata.SegmentSize = defaultSegmentSize
-	}
-	b, err := binary.Append([]byte(magic), binary.BigEndian, f)
-	if err != nil {
-		t.Fatalf("Bad file metadata: %s", err)
-	}
-	return b
 }
 
 func TestDecrypt_BadFileFormat(t *testing.T) {
@@ -84,67 +58,12 @@ func TestDecrypt_BadFileFormat(t *testing.T) {
 		desc:        "Short",
 		fileContent: []byte{0x80},
 	}, {
-		desc:        "BadFormat",
-		fileContent: []byte("bad file format"),
-	}, {
-		desc:        "BadMagic",
-		fileContent: []byte("\x80asdf"),
-	}, {
-		desc:        "BadHeader",
-		fileContent: []byte("\x80symasdf"),
-	}, {
-		desc: "BadVersion",
-		fileContent: encodeHeader(t, &fileMetadata{
-			Version: -1,
-		}),
-	}, {
-		desc: "BadEncryptionAlg",
-		fileContent: encodeHeader(t, &fileMetadata{
-			EncryptionMetadata: encryptionMetadata{
-				EncryptionType: -1,
-			},
-		}),
-	}, {
-		desc: "BadSegmentSize",
-		fileContent: encodeHeader(t, &fileMetadata{
-			EncryptionMetadata: encryptionMetadata{
-				SegmentSize: -1,
-			},
-		}),
-	}, {
-		desc: "BadSaltSize",
-		fileContent: encodeHeader(t, &fileMetadata{
-			HashMetadata: hashMetadata{
-				SaltSize: -1,
-			},
-		}),
-	}, {
-		desc: "BadPasswordHashType",
-		fileContent: encodeHeader(t, &fileMetadata{
-			HashMetadata: hashMetadata{
-				PasswordHashType: -1,
-			},
-		}),
-	}, {
-		desc: "BadIterations",
-		fileContent: encodeHeader(t, &fileMetadata{
-			HashMetadata: hashMetadata{
-				Iterations: -1,
-			},
-		}),
-	}, {
-		desc:        "NoSalt",
-		fileContent: encodeHeader(t, &fileMetadata{}),
-	}, {
-		desc: "ShortSalt",
-		fileContent: slices.Concat(
-			encodeHeader(t, &fileMetadata{}),
-			[]byte("asdf")),
+		desc:        "NoContent",
+		fileContent: bytes.Repeat([]byte{0}, saltSize),
 	}, {
 		desc: "BadContent",
 		fileContent: slices.Concat(
-			encodeHeader(t, &fileMetadata{}),
-			bytes.Repeat([]byte{0}, defaultSaltSize),
+			bytes.Repeat([]byte{0}, saltSize),
 			[]byte("bad content")),
 	}} {
 		t.Run(tc.desc, func(t *testing.T) {
@@ -152,7 +71,7 @@ func TestDecrypt_BadFileFormat(t *testing.T) {
 
 			fileName := filepath.Join(t.TempDir(), "file")
 			mustWriteFile(t, fileName, tc.fileContent)
-			err := defaultDecryptOptions.decryptFile(fileName, "asdf")
+			err := testDecryptOptions.decryptFile(fileName, "asdf")
 			if err == nil {
 				t.Errorf("DecryptFile succeeded for incorrect file format, want error")
 			}
@@ -171,7 +90,7 @@ func TestDecryptFile_WeirdName(t *testing.T) {
 		t.Fatalf("EncryptFile failed: %s", err)
 	}
 	mustRename(t, fileName+".enc", fileName+".encrypted")
-	if err := defaultDecryptOptions.decryptFile(fileName+".encrypted", password); err != nil {
+	if err := testDecryptOptions.decryptFile(fileName+".encrypted", password); err != nil {
 		t.Fatalf("DecryptFile failed: %s", err)
 	}
 	gotContents := mustReadFile(t, fileName+".encrypted.dec")
@@ -183,7 +102,7 @@ func TestDecryptFile_WeirdName(t *testing.T) {
 func TestDecryptFile_NotFound(t *testing.T) {
 	t.Parallel()
 
-	err := defaultDecryptOptions.decryptFile("my-nonexistent-file.txt", "asdf")
+	err := testDecryptOptions.decryptFile("my-nonexistent-file.txt", "asdf")
 	if err == nil {
 		t.Fatal("decryptFile succeeded for nonexistent file, want error")
 	}
@@ -196,7 +115,7 @@ func TestDecryptFile_NoPermission(t *testing.T) {
 	mustWriteFile(t, fileName, []byte("test file content"))
 	mustWriteFile(t, strings.TrimSuffix(fileName, ".enc"), nil)
 	mustChmod(t, strings.TrimSuffix(fileName, ".enc"), 0400)
-	opts := defaultDecryptOptions
+	opts := testDecryptOptions
 	opts.force = true
 	err := opts.decryptFile(fileName, "asdf")
 	if err == nil {
@@ -232,7 +151,7 @@ func TestDecryptOptions_Run(t *testing.T) {
 		t.Errorf("EncryptFile failed: %s", err)
 	}
 	mustRemove(t, fileName)
-	opts := defaultDecryptOptions
+	opts := testDecryptOptions
 	opts.password = password
 	err := opts.run(fileName + ".enc")
 	if err != nil {
@@ -247,7 +166,7 @@ func TestDecryptOptions_Run(t *testing.T) {
 func TestDecryptOptions_Run_UsageError(t *testing.T) {
 	t.Parallel()
 
-	err := defaultDecryptOptions.run()
+	err := testDecryptOptions.run()
 	if err == nil {
 		t.Errorf("Run without -p when reading from stdin, want error")
 	}
@@ -256,7 +175,7 @@ func TestDecryptOptions_Run_UsageError(t *testing.T) {
 func TestDecryptOptions_Run_NotFound(t *testing.T) {
 	t.Parallel()
 
-	opts := defaultDecryptOptions
+	opts := testDecryptOptions
 	opts.password = "asdf"
 	err := opts.run("my-nonexistent-file-name.txt")
 	if err == nil {
@@ -274,7 +193,7 @@ func TestDecryptOptions_Run_Stdin(t *testing.T) {
 		t.Fatalf("Failed to encrypt: %s", err)
 	}
 	gotContentBuf := new(bytes.Buffer)
-	opts := defaultDecryptOptions
+	opts := testDecryptOptions
 	opts.password = password
 	opts.stdin = bytes.NewReader(encrypted.Bytes())
 	opts.stdout = gotContentBuf
@@ -313,7 +232,7 @@ func TestDecryptOptions_Run_ReadPassword(t *testing.T) {
 			}
 			mustRemove(t, fileName)
 
-			opts := defaultDecryptOptions
+			opts := testDecryptOptions
 			opts.passwordIn = func() (string, error) {
 				return password, tc.err
 			}
