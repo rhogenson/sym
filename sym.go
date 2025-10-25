@@ -1,3 +1,10 @@
+// The sym command encrypts or decrypts files with a password.
+//
+// Sym has two subcommands, enc and dec, which perform encryption and
+// decryption. The encryption key is derived from the user's password using
+// argon2, and the data is then encrypted using AES-256 in chunks of 1MiB.
+//
+// Run sym -h for detailed usage information.
 package main
 
 import (
