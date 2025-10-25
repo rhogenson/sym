@@ -13,7 +13,7 @@ type subcommand interface {
 }
 
 func whichSubcommand(name string) (subcommand, bool) {
-	switch filepath.Base(name) {
+	switch name {
 	case "enc":
 		return &encryptOptions{
 			passwordIn:  termReadPassword,
@@ -33,20 +33,38 @@ func whichSubcommand(name string) (subcommand, bool) {
 }
 
 func run(args []string) error {
-	cmd, ok := whichSubcommand(args[0])
+	name := filepath.Base(args[0])
+	cmd, ok := whichSubcommand(name)
 	if !ok {
-		if len(args) < 2 {
-			return fmt.Errorf("missing subcommand")
+		flag.Usage = func() {
+			fmt.Fprintf(os.Stderr, `usage: sym <subcommand> [OPTION]... [FILE]...
+Encrypt or decrypt files using a password.
+
+Subcommands:
+  enc    encrypt
+  dec    decrypt
+
+Try sym <subcommand> -h for command-specific help.
+
+Pro tip: use "ln sym enc" or "ln sym dec" to create shortcuts for each subcommand.
+`)
 		}
-		cmd, ok = whichSubcommand(args[1])
+		flag.CommandLine.Parse(args[1:])
+		args = flag.Args()
+		if len(args) == 0 {
+			return fmt.Errorf("missing subcommand (use sym -h for help)")
+		}
+		subcommand := filepath.Base(args[0])
+		name = "sym " + subcommand
+		cmd, ok = whichSubcommand(subcommand)
 		if !ok {
-			return fmt.Errorf("invalid subcommand %q", args[1])
+			return fmt.Errorf("invalid subcommand %q", args[0])
 		}
-		args = args[1:]
 	}
-	cmd.registerFlags(flag.CommandLine)
-	flag.CommandLine.Parse(args[1:])
-	return cmd.run(flag.Args()...)
+	fs := flag.NewFlagSet(name, flag.ExitOnError)
+	cmd.registerFlags(fs)
+	fs.Parse(args[1:])
+	return cmd.run(fs.Args()...)
 }
 
 func main() {

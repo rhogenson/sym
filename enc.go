@@ -23,6 +23,21 @@ func (f *encryptFlags) registerFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&f.generatePassword, "g", false, "generate a secure password automatically (password will be printed to stderr)")
 	fs.StringVar(&f.password, "p", "", "use the specified password; if not provided, enc will prompt for a password")
 	fs.BoolVar(&f.force, "f", false, "overwrite output files even if they already exist")
+	fs.Usage = func() {
+		fmt.Fprintf(fs.Output(), `usage: %s [OPTION]... [FILE]...
+Encrypt files, or stdin if no files are provided.
+
+`,
+			fs.Name())
+		fs.PrintDefaults()
+		fmt.Fprintf(fs.Output(), `
+One of -g or -p must be used when reading from stdin. When encrypting to
+stdout, consider redirecting the result since binary output can mess up
+your terminal. Example:
+  echo test | %s -p 'my super secure password' | base64
+`,
+			fs.Name())
+	}
 }
 
 type encryptOptions struct {

@@ -22,6 +22,23 @@ type decryptFlags struct {
 func (f *decryptFlags) registerFlags(fs *flag.FlagSet) {
 	fs.StringVar(&f.password, "p", "", "use the specified password; if not provided, dec will prompt for a password")
 	fs.BoolVar(&f.force, "f", false, "overwrite output files even if they already exist")
+	fs.Usage = func() {
+		fmt.Fprintf(fs.Output(), `usage: %s [OPTION]... [FILE]...
+Decrypt files, or stdin if no files are provided.
+
+`,
+			fs.Name())
+		fs.PrintDefaults()
+		fmt.Fprintf(fs.Output(), `-p is required when reading from stdin.
+
+For example,
+  %s my-encrypted-file.txt.enc
+would decrypt my-encrypted-file.txt.enc and write the result to
+my-encrypted-file.txt. If a filename does not end with .enc, the name
+will be appended with a .dec extension.
+`,
+			fs.Name())
+	}
 }
 
 type decryptOptions struct {
