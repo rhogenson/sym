@@ -1,5 +1,16 @@
 package main
 
+// This file is based on the influential paper
+// [Online Authenticated-Encryption and its Nonce-Reuse Misuse-Resistance].
+// It encrypts a stream of data in 1MiB segments using ChaCha20-Poly1305
+// to encrypt each segment. The nonce is a 12 byte value, the first 11
+// bytes of which are a counter that gets incremented for each segment,
+// and the last byte is 0 for every segment except the last segment
+// (where it is 1). Before the encrypted segments, it writes a 32 byte
+// header containing the salt for the password hash.
+//
+// [Online Authenticated-Encryption and its Nonce-Reuse Misuse-Resistance]: https://eprint.iacr.org/2015/189.pdf
+
 import (
 	"bufio"
 	"bytes"
@@ -39,7 +50,7 @@ func (se *segmentEncrypter) nextNonce(lastSegment bool) {
 	// Increment counter
 	for i := 0; ; i++ {
 		if i == len(se.nonce)-1 {
-			panic("counter overflowed")
+			panic("counter overflowed") // impossible, 11 bytes
 		}
 		se.nonce[i]++
 		if se.nonce[i] != 0 {

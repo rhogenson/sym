@@ -169,8 +169,8 @@ func TestDecCmd_Run_Stdin(t *testing.T) {
 	gotContentBuf := new(bytes.Buffer)
 	if err := (&decCmd{
 		password: password,
-		stdin:        bytes.NewReader(encrypted.Bytes()),
-		stdout:       gotContentBuf,
+		stdin:    bytes.NewReader(encrypted.Bytes()),
+		stdout:   gotContentBuf,
 	}).run(); err != nil {
 		t.Fatalf("run failed: %s", err)
 	}

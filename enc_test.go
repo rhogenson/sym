@@ -125,7 +125,7 @@ func TestEncCmd_Run_GeneratePassword(t *testing.T) {
 	password := new(strings.Builder)
 	opts := &encCmd{
 		generatePassword: true,
-		passwordOut:  password,
+		passwordOut:      password,
 	}
 	if err := opts.run(fileName); err != nil {
 		t.Fatalf("encCmd.run(%+v) failed: %s", opts, err)
@@ -151,8 +151,8 @@ func TestEncCmd_Run_Stdin(t *testing.T) {
 	stdout := new(strings.Builder)
 	if err := (&encCmd{
 		password: password,
-		stdin:        strings.NewReader(input),
-		stdout:       stdout,
+		stdin:    strings.NewReader(input),
+		stdout:   stdout,
 	}).run(); err != nil {
 		t.Errorf("encCmd.run failed: %s", err)
 	}

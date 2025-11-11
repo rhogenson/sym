@@ -113,24 +113,24 @@ func TestCommander_Errors(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
-		desc string
-		cmd []string
+		desc       string
+		cmd        []string
 		wantStatus subcommands.ExitStatus
-	} {{
-		desc: "EncUsageError",
-		cmd: []string{"enc", "-g", "-p=asdf", "file.txt"},
+	}{{
+		desc:       "EncUsageError",
+		cmd:        []string{"enc", "-g", "-p=asdf", "file.txt"},
 		wantStatus: subcommands.ExitUsageError,
 	}, {
-		desc: "EncNoSuchFile",
-		cmd: []string{"enc", "-p=asdf", "nonexistent-file.txt"},
+		desc:       "EncNoSuchFile",
+		cmd:        []string{"enc", "-p=asdf", "nonexistent-file.txt"},
 		wantStatus: subcommands.ExitFailure,
 	}, {
-		desc: "DecUsageError",
-		cmd: []string{"dec"},
+		desc:       "DecUsageError",
+		cmd:        []string{"dec"},
 		wantStatus: subcommands.ExitUsageError,
 	}, {
-		desc: "DecNoSuchFile",
-		cmd: []string{"dec", "-p=asdf", "nonexistent-file.txt.enc"},
+		desc:       "DecNoSuchFile",
+		cmd:        []string{"dec", "-p=asdf", "nonexistent-file.txt.enc"},
 		wantStatus: subcommands.ExitFailure,
 	}} {
 		t.Run(tc.desc, func(t *testing.T) {

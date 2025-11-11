@@ -26,7 +26,7 @@ type encCmd struct {
 	stdout      io.Writer
 }
 
-func (*encCmd) Name() string { return "enc" }
+func (*encCmd) Name() string     { return "enc" }
 func (*encCmd) Synopsis() string { return "encrypt" }
 func (*encCmd) Usage() string {
 	return `usage: sym enc [OPTION]... [FILE]...
