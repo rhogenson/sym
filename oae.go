@@ -3,16 +3,17 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
 	"errors"
 	"io"
+
+	"golang.org/x/crypto/chacha20poly1305"
 )
 
 const (
-	nonceSize    = 12
-	aeadOverhead = 16
+	nonceSize    = chacha20poly1305.NonceSize
+	aeadOverhead = chacha20poly1305.Overhead
 
 	segmentSize          = 1024 * 1024
 	plaintextSegmentSize = segmentSize - aeadOverhead
@@ -29,11 +30,8 @@ type segmentEncrypter struct {
 
 func (se *segmentEncrypter) initialize(salt []byte) error {
 	key := hashPassword(se.password, salt)
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return err
-	}
-	se.aead, err = cipher.NewGCM(block)
+	var err error
+	se.aead, err = chacha20poly1305.New(key)
 	return err
 }
 
