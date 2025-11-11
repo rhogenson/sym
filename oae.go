@@ -35,38 +35,30 @@ func (se *segmentEncrypter) initialize(salt []byte) error {
 	return err
 }
 
-func (se *segmentEncrypter) ad(lastSegment bool) ([]byte, error) {
+func (se *segmentEncrypter) ad(lastSegment bool) []byte {
 	// Increment counter
 	for i := 0; ; i++ {
 		if i == len(se.nonce) {
-			return nil, errors.New("counter overflowed")
+			panic("counter overflowed")
 		}
 		se.nonce[i]++
 		if se.nonce[i] != 0 {
 			break
 		}
 	}
-	ad := make([]byte, len(se.nonce)+1)
-	copy(ad, se.nonce[:])
 	if lastSegment {
-		ad[len(ad)-1] = 1
+		return []byte{1}
 	}
-	return ad, nil
+	return []byte{0}
 }
 
-func (se *segmentEncrypter) encrypt(out, buf []byte, lastSegment bool) ([]byte, error) {
-	ad, err := se.ad(lastSegment)
-	if err != nil {
-		return nil, err
-	}
-	return se.aead.Seal(out, se.nonce[:], buf, ad), nil
+func (se *segmentEncrypter) encrypt(out, buf []byte, lastSegment bool) []byte {
+	ad := se.ad(lastSegment)
+	return se.aead.Seal(out, se.nonce[:], buf, ad)
 }
 
 func (se *segmentEncrypter) decrypt(out, buf []byte, lastSegment bool) ([]byte, error) {
-	ad, err := se.ad(lastSegment)
-	if err != nil {
-		return nil, err
-	}
+	ad := se.ad(lastSegment)
 	return se.aead.Open(out, se.nonce[:], buf, ad)
 }
 
@@ -104,11 +96,7 @@ func (w *encryptingWriter) initialize() error {
 }
 
 func (w *encryptingWriter) writeBuf(lastSegment bool) error {
-	var err error
-	if w.buf, err = w.encrypter.encrypt(w.buf[:0], w.buf, lastSegment); err != nil {
-		return err
-	}
-	if _, err := w.w.Write(w.buf); err != nil {
+	if _, err := w.w.Write(w.encrypter.encrypt(w.buf[:0], w.buf, lastSegment)); err != nil {
 		return err
 	}
 	w.buf = w.buf[:0]
