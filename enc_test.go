@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"errors"
-	"flag"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -31,7 +30,7 @@ func TestEncryptFile_Force(t *testing.T) {
 			fileName := filepath.Join(t.TempDir(), "file")
 			mustWriteFile(t, fileName, []byte("test file content"))
 			mustWriteFile(t, fileName+".enc", []byte("file already exists"))
-			err := (&encryptOptions{encryptFlags: encryptFlags{force: tc.force}}).encryptFile(fileName, "asdf")
+			err := (&encCmd{force: tc.force}).encryptFile(fileName, "asdf")
 			if gotErr := err != nil; gotErr != tc.wantErr {
 				t.Errorf("EncryptFile(force=%t) returned returned error %v when output file exists, want error? %t", tc.force, err, tc.wantErr)
 			}
@@ -42,7 +41,7 @@ func TestEncryptFile_Force(t *testing.T) {
 func TestEncryptFile_NotFound(t *testing.T) {
 	t.Parallel()
 
-	err := (&encryptOptions{}).encryptFile("my-nonexistent-file.txt", "asdf")
+	err := (&encCmd{}).encryptFile("my-nonexistent-file.txt", "asdf")
 	if err == nil {
 		t.Fatal("encryptFile succeeded for nonexistent file, want error")
 	}
@@ -55,42 +54,24 @@ func TestEncryptFile_NoPermission(t *testing.T) {
 	mustWriteFile(t, fileName, []byte("test file content"))
 	mustWriteFile(t, fileName+".enc", nil)
 	mustChmod(t, fileName+".enc", 0400)
-	err := (&encryptOptions{encryptFlags: encryptFlags{force: true}}).encryptFile(fileName, "asdf")
+	err := (&encCmd{force: true}).encryptFile(fileName, "asdf")
 	if err == nil {
 		t.Fatal("encryptFile succeeded for unwritable file, want error")
 	}
 }
 
-func TestEncryptOptions_RegisterFlags(t *testing.T) {
-	t.Parallel()
-
-	var o encryptOptions
-	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	o.registerFlags(fs)
-	const cmd = "-g -p asdf -f"
-	fs.Parse(strings.Split(cmd, " "))
-	want := encryptFlags{
-		generatePassword: true,
-		password:         "asdf",
-		force:            true,
-	}
-	if o.encryptFlags != want {
-		t.Errorf("Command line %q parsed incorrect encryptOptions, got %+v, want %+v", cmd, o, want)
-	}
-}
-
-func TestEncryptOptions_Run(t *testing.T) {
+func TestEncCmd_Run(t *testing.T) {
 	t.Parallel()
 
 	const password = "asdf"
 	fileContent := []byte("test file content")
 	fileName := filepath.Join(t.TempDir(), "file")
 	mustWriteFile(t, fileName, fileContent)
-	if err := (&encryptOptions{encryptFlags: encryptFlags{password: password}}).run(fileName); err != nil {
+	if err := (&encCmd{password: password}).run(fileName); err != nil {
 		t.Fatalf("enc failed: %s", err)
 	}
 	mustRemove(t, fileName)
-	if err := (&decryptOptions{}).decryptFile(fileName+".enc", password); err != nil {
+	if err := (&decCmd{}).decryptFile(fileName+".enc", password); err != nil {
 		t.Fatalf("Failed to decrypt encrypted file: %s", err)
 	}
 	gotFileContents := mustReadFile(t, fileName)
@@ -99,7 +80,7 @@ func TestEncryptOptions_Run(t *testing.T) {
 	}
 }
 
-func TestEncryptOptions_Run_UsageError(t *testing.T) {
+func TestEncCmd_Run_UsageError(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
@@ -123,18 +104,18 @@ func TestEncryptOptions_Run_UsageError(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
 
-			opts := &encryptOptions{encryptFlags: encryptFlags{
+			opts := &encCmd{
 				generatePassword: tc.generatePassword,
 				password:         tc.password,
-			}}
+			}
 			if err := opts.run(tc.files...); err == nil {
-				t.Errorf("encryptOptions.run(%+v) succeeded, want error", opts)
+				t.Errorf("encCmd.run(%+v) succeeded, want error", opts)
 			}
 		})
 	}
 }
 
-func TestEncryptOptions_Run_GeneratePassword(t *testing.T) {
+func TestEncCmd_Run_GeneratePassword(t *testing.T) {
 	t.Parallel()
 
 	fileContent := []byte("test file content")
@@ -142,16 +123,16 @@ func TestEncryptOptions_Run_GeneratePassword(t *testing.T) {
 	mustWriteFile(t, fileName, fileContent)
 
 	password := new(strings.Builder)
-	opts := &encryptOptions{
-		encryptFlags: encryptFlags{generatePassword: true},
+	opts := &encCmd{
+		generatePassword: true,
 		passwordOut:  password,
 	}
 	if err := opts.run(fileName); err != nil {
-		t.Fatalf("encryptOptions.run(%+v) failed: %s", opts, err)
+		t.Fatalf("encCmd.run(%+v) failed: %s", opts, err)
 	}
 	pw := password.String()
 	mustRemove(t, fileName)
-	if err := (&decryptOptions{}).decryptFile(fileName+".enc", pw); err != nil {
+	if err := (&decCmd{}).decryptFile(fileName+".enc", pw); err != nil {
 		t.Fatalf("Failed to decrypt encrypted file with generated password %q: %s", pw, err)
 	}
 	gotFileContents := mustReadFile(t, fileName)
@@ -160,7 +141,7 @@ func TestEncryptOptions_Run_GeneratePassword(t *testing.T) {
 	}
 }
 
-func TestEncryptOptions_Run_Stdin(t *testing.T) {
+func TestEncCmd_Run_Stdin(t *testing.T) {
 	t.Parallel()
 
 	const (
@@ -168,15 +149,15 @@ func TestEncryptOptions_Run_Stdin(t *testing.T) {
 		password = "asdf"
 	)
 	stdout := new(strings.Builder)
-	if err := (&encryptOptions{
-		encryptFlags: encryptFlags{password: password},
+	if err := (&encCmd{
+		password: password,
 		stdin:        strings.NewReader(input),
 		stdout:       stdout,
 	}).run(); err != nil {
-		t.Errorf("encryptOptions.run failed: %s", err)
+		t.Errorf("encCmd.run failed: %s", err)
 	}
 	got := new(strings.Builder)
-	if err := (&decryptOptions{}).decrypt(got, strings.NewReader(stdout.String()), password); err != nil {
+	if err := (&decCmd{}).decrypt(got, strings.NewReader(stdout.String()), password); err != nil {
 		t.Errorf("Failed to decrypt stdout content %q: %s", stdout, err)
 	}
 	if got, want := got.String(), input; got != want {
@@ -184,7 +165,7 @@ func TestEncryptOptions_Run_Stdin(t *testing.T) {
 	}
 }
 
-func TestEncryptOptions_Run_ReadPassword(t *testing.T) {
+func TestEncCmd_Run_ReadPassword(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
@@ -220,7 +201,7 @@ func TestEncryptOptions_Run_ReadPassword(t *testing.T) {
 			mustWriteFile(t, fileName, []byte("test file content"))
 
 			passwordI := 0
-			err := (&encryptOptions{
+			err := (&encCmd{
 				passwordIn: func() (string, error) {
 					if passwordI == len(tc.passwords) && tc.err != nil {
 						return "", tc.err
@@ -231,7 +212,7 @@ func TestEncryptOptions_Run_ReadPassword(t *testing.T) {
 				},
 			}).run(fileName)
 			if gotErr := err != nil; gotErr != tc.wantErr {
-				t.Errorf("encryptOptions.run returned error %v, want error? %t", err, tc.wantErr)
+				t.Errorf("encCmd.run returned error %v, want error? %t", err, tc.wantErr)
 			}
 		})
 	}

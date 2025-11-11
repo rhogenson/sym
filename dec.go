@@ -1,55 +1,54 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"strings"
+
+	"github.com/google/subcommands"
 )
 
-func (o *decryptOptions) decrypt(w io.Writer, r io.Reader, password string) error {
-	_, err := io.Copy(w, newDecryptingReader(r, password))
-	return err
-}
-
-type decryptFlags struct {
+type decCmd struct {
 	password string
 	force    bool
-}
-
-func (f *decryptFlags) registerFlags(fs *flag.FlagSet) {
-	fs.StringVar(&f.password, "p", "", "use the specified password; if not provided, dec will prompt for a password")
-	fs.BoolVar(&f.force, "f", false, "overwrite output files even if they already exist")
-	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), `usage: %s [OPTION]... [FILE]...
-Decrypt files, or stdin if no files are provided.
-
-`,
-			fs.Name())
-		fs.PrintDefaults()
-		fmt.Fprintf(fs.Output(), `-p is required when reading from stdin.
-
-For example,
-  %s my-encrypted-file.txt.enc
-would decrypt my-encrypted-file.txt.enc and write the result to
-my-encrypted-file.txt. If a filename does not end with .enc, the name
-will be appended with a .dec extension.
-`,
-			fs.Name())
-	}
-}
-
-type decryptOptions struct {
-	decryptFlags
 
 	passwordIn func() (string, error)
 	stdin      io.Reader
 	stdout     io.Writer
 }
 
-func (o *decryptOptions) decryptFile(fileName string, password string) (err error) {
+func (*decCmd) Name() string     { return "dec" }
+func (*decCmd) Synopsis() string { return "decrypt" }
+func (*decCmd) Usage() string {
+	return `usage: sym dec [OPTION]... [FILE]...
+Decrypt files, or stdin if no files are provided.
+
+-p is required when reading from stdin.
+
+For example,
+  sym dec my-encrypted-file.txt.enc
+would decrypt my-encrypted-file.txt.enc and write the result to
+my-encrypted-file.txt. If a filename does not end with .enc, the name
+will be appended with a .dec extension.
+
+`
+}
+
+func (c *decCmd) SetFlags(fs *flag.FlagSet) {
+	fs.StringVar(&c.password, "p", "", "use the specified password; if not provided, dec will prompt for a password")
+	fs.BoolVar(&c.force, "f", false, "overwrite output files even if they already exist")
+}
+
+func (c *decCmd) decrypt(w io.Writer, r io.Reader, password string) error {
+	_, err := io.Copy(w, newDecryptingReader(r, password))
+	return err
+}
+
+func (c *decCmd) decryptFile(fileName string, password string) (err error) {
 	var outFileName string
 	if name, ok := strings.CutSuffix(fileName, ".enc"); ok {
 		outFileName = name
@@ -62,7 +61,7 @@ func (o *decryptOptions) decryptFile(fileName string, password string) (err erro
 	}
 	defer fIn.Close()
 	fileOpts := os.O_CREATE | os.O_WRONLY
-	if o.force {
+	if c.force {
 		fileOpts |= os.O_TRUNC
 	} else {
 		fileOpts |= os.O_EXCL
@@ -80,40 +79,51 @@ func (o *decryptOptions) decryptFile(fileName string, password string) (err erro
 			os.Remove(fOut.Name())
 		}
 	}()
-	if err := o.decrypt(fOut, fIn, password); err != nil {
+	if err := c.decrypt(fOut, fIn, password); err != nil {
 		return fmt.Errorf("decrypt %q: %s", fileName, err)
 	}
 	return fOut.Close()
 }
 
-func (o *decryptOptions) readPassword() (string, error) {
+func (c *decCmd) readPassword() (string, error) {
 	fmt.Fprint(os.Stderr, "Enter password: ")
-	pw, err := o.passwordIn()
+	pw, err := c.passwordIn()
 	fmt.Fprintln(os.Stderr)
 	return pw, err
 }
 
-func (o *decryptOptions) run(args ...string) error {
-	if len(args) == 0 && o.password == "" {
-		return fmt.Errorf("-p is required when reading from stdin")
+func (c *decCmd) run(args ...string) error {
+	if len(args) == 0 && c.password == "" {
+		return usageErr("-p is required when reading from stdin")
 	}
 	var password string
-	if o.password != "" {
-		password = o.password
+	if c.password != "" {
+		password = c.password
 	} else {
 		var err error
-		password, err = o.readPassword()
+		password, err = c.readPassword()
 		if err != nil {
 			return err
 		}
 	}
 	if len(args) == 0 {
-		return o.decrypt(o.stdout, o.stdin, password)
+		return c.decrypt(c.stdout, c.stdin, password)
 	}
 	for _, fileName := range args {
-		if err := o.decryptFile(fileName, password); err != nil {
+		if err := c.decryptFile(fileName, password); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (c *decCmd) Execute(ctx context.Context, f *flag.FlagSet, _ ...any) subcommands.ExitStatus {
+	if err := c.run(f.Args()...); err != nil {
+		fmt.Fprintf(os.Stderr, "sym: %s\n", err)
+		if errors.Is(err, errUsage) {
+			return subcommands.ExitUsageError
+		}
+		return subcommands.ExitFailure
+	}
+	return subcommands.ExitSuccess
 }

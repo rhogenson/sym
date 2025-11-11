@@ -8,43 +8,47 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
-	"path/filepath"
+
+	"github.com/google/subcommands"
 )
 
-type subcommand interface {
-	registerFlags(*flag.FlagSet)
-	run(...string) error
+var errUsage = errors.New("usage error")
+
+type usageError struct {
+	msg string
 }
 
-func whichSubcommand(name string) (subcommand, bool) {
-	switch name {
-	case "enc":
-		return &encryptOptions{
-			passwordIn:  termReadPassword,
-			passwordOut: os.Stderr,
-			stdin:       os.Stdin,
-			stdout:      os.Stdout,
-		}, true
-	case "dec":
-		return &decryptOptions{
-			passwordIn: termReadPassword,
-			stdin:      os.Stdin,
-			stdout:     os.Stdout,
-		}, true
-	default:
-		return nil, false
-	}
+func usageErr(format string, args ...any) error {
+	return &usageError{msg: fmt.Sprintf(format, args...)}
 }
 
-func run(args []string) error {
-	name := filepath.Base(args[0])
-	cmd, ok := whichSubcommand(name)
-	if !ok {
-		flag.Usage = func() {
-			fmt.Fprintf(os.Stderr, `usage: sym <subcommand> [OPTION]... [FILE]...
+func (e *usageError) Error() string {
+	return e.msg
+}
+
+func (e *usageError) Is(target error) bool { return target == errUsage }
+
+func registerCommands(commander *subcommands.Commander, passwordIn func() (string, error), passwordOut io.Writer, stdin io.Reader, stdout io.Writer) {
+	commander.Register(&encCmd{
+		passwordIn:  passwordIn,
+		passwordOut: passwordOut,
+		stdin:       stdin,
+		stdout:      stdout,
+	}, "")
+	commander.Register(&decCmd{
+		passwordIn: passwordIn,
+		stdin:      stdin,
+		stdout:     stdout,
+	}, "")
+	commander.Register(commander.HelpCommand(), "")
+	commander.Explain = func(w io.Writer) {
+		fmt.Fprintf(w, `usage: sym <subcommand> [OPTION]... [FILE]...
 Encrypt or decrypt files using a password.
 
 Subcommands:
@@ -52,31 +56,13 @@ Subcommands:
   dec    decrypt
 
 Try sym <subcommand> -h for command-specific help.
-
-Pro tip: use "ln sym enc" or "ln sym dec" to create shortcuts for each subcommand.
 `)
-		}
-		flag.CommandLine.Parse(args[1:])
-		args = flag.Args()
-		if len(args) == 0 {
-			return fmt.Errorf("missing subcommand (use sym -h for help)")
-		}
-		subcommand := filepath.Base(args[0])
-		name = "sym " + subcommand
-		cmd, ok = whichSubcommand(subcommand)
-		if !ok {
-			return fmt.Errorf("invalid subcommand %q", args[0])
-		}
 	}
-	fs := flag.NewFlagSet(name, flag.ExitOnError)
-	cmd.registerFlags(fs)
-	fs.Parse(args[1:])
-	return cmd.run(fs.Args()...)
 }
 
 func main() {
-	if err := run(os.Args); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
+	ctx := context.Background()
+	registerCommands(subcommands.DefaultCommander, termReadPassword, os.Stderr, os.Stdin, os.Stdout)
+	flag.Parse()
+	os.Exit(int(subcommands.Execute(ctx)))
 }

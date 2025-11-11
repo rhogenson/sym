@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
@@ -10,38 +11,14 @@ import (
 	"os"
 	"strings"
 
+	"github.com/google/subcommands"
 	"roseh.moe/pkg/wordlist"
 )
 
-type encryptFlags struct {
+type encCmd struct {
 	generatePassword bool
 	password         string
 	force            bool
-}
-
-func (f *encryptFlags) registerFlags(fs *flag.FlagSet) {
-	fs.BoolVar(&f.generatePassword, "g", false, "generate a secure password automatically (password will be printed to stderr)")
-	fs.StringVar(&f.password, "p", "", "use the specified password; if not provided, enc will prompt for a password")
-	fs.BoolVar(&f.force, "f", false, "overwrite output files even if they already exist")
-	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), `usage: %s [OPTION]... [FILE]...
-Encrypt files, or stdin if no files are provided.
-
-`,
-			fs.Name())
-		fs.PrintDefaults()
-		fmt.Fprintf(fs.Output(), `
-One of -g or -p must be used when reading from stdin. When encrypting to
-stdout, consider redirecting the result since binary output can mess up
-your terminal. Example:
-  echo test | %s -p 'my super secure password' | base64
-`,
-			fs.Name())
-	}
-}
-
-type encryptOptions struct {
-	encryptFlags
 
 	passwordIn  func() (string, error)
 	passwordOut io.Writer
@@ -49,7 +26,27 @@ type encryptOptions struct {
 	stdout      io.Writer
 }
 
-func (o *encryptOptions) encrypt(w io.Writer, r io.Reader, password string) error {
+func (*encCmd) Name() string { return "enc" }
+func (*encCmd) Synopsis() string { return "encrypt" }
+func (*encCmd) Usage() string {
+	return `usage: sym enc [OPTION]... [FILE]...
+Encrypt files, or stdin if no files are provided.
+
+One of -g or -p must be used when reading from stdin. When encrypting to
+stdout, consider redirecting the result since binary output can mess up
+your terminal. Example:
+  echo test | sym enc -p 'my super secure password' | base64
+
+`
+}
+
+func (c *encCmd) SetFlags(fs *flag.FlagSet) {
+	fs.BoolVar(&c.generatePassword, "g", false, "generate a secure password automatically (password will be printed to stderr)")
+	fs.StringVar(&c.password, "p", "", "use the specified password; if not provided, enc will prompt for a password")
+	fs.BoolVar(&c.force, "f", false, "overwrite output files even if they already exist")
+}
+
+func (c *encCmd) encrypt(w io.Writer, r io.Reader, password string) error {
 	writer := newEncryptingWriter(w, password)
 	if _, err := io.Copy(writer, r); err != nil {
 		return err
@@ -57,14 +54,14 @@ func (o *encryptOptions) encrypt(w io.Writer, r io.Reader, password string) erro
 	return writer.close()
 }
 
-func (o *encryptOptions) encryptFile(fileName string, password string) (err error) {
+func (c *encCmd) encryptFile(fileName string, password string) (err error) {
 	f, err := os.Open(fileName)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
 	fileOpts := os.O_CREATE | os.O_WRONLY
-	if o.force {
+	if c.force {
 		fileOpts |= os.O_TRUNC
 	} else {
 		fileOpts |= os.O_EXCL
@@ -82,55 +79,45 @@ func (o *encryptOptions) encryptFile(fileName string, password string) (err erro
 			os.Remove(fOut.Name())
 		}
 	}()
-	if err = o.encrypt(fOut, f, password); err != nil {
+	if err = c.encrypt(fOut, f, password); err != nil {
 		return fmt.Errorf("encrypt %q: %s", fileName, err)
 	}
 	return fOut.Close()
 }
 
-func (o *encryptOptions) readPassword() (string, error) {
-	const maxAttempts = 3
-	for i := 1; i <= maxAttempts; i++ {
-		fmt.Fprint(os.Stderr, "Enter password")
-		if i > 1 {
-			fmt.Fprintf(os.Stderr, " (attempt %d/%d)", i, maxAttempts)
-		}
-		fmt.Fprint(os.Stderr, ": ")
-		password, err := o.passwordIn()
-		fmt.Fprintln(os.Stderr)
-		if err != nil {
-			return "", err
-		}
-		if password == "" {
-			fmt.Fprintln(os.Stderr, "Password cannot be empty")
-			continue
-		}
-		fmt.Fprint(os.Stderr, "Repeat password: ")
-		pwConfirm, err := o.passwordIn()
-		fmt.Fprintln(os.Stderr)
-		if err != nil {
-			return "", err
-		}
-		if pwConfirm != password {
-			fmt.Fprintln(os.Stderr, "Passwords do not match")
-			continue
-		}
-		return password, nil
+func (c *encCmd) readPassword() (string, error) {
+	fmt.Fprint(os.Stderr, "Enter password: ")
+	password, err := c.passwordIn()
+	fmt.Fprintln(os.Stderr)
+	if err != nil {
+		return "", err
 	}
-	return "", fmt.Errorf("too many attempts")
+	if password == "" {
+		return "", usageErr("password cannot be empty")
+	}
+	fmt.Fprint(os.Stderr, "Repeat password: ")
+	pwConfirm, err := c.passwordIn()
+	fmt.Fprintln(os.Stderr)
+	if err != nil {
+		return "", err
+	}
+	if pwConfirm != password {
+		return "", usageErr("passwords do not match")
+	}
+	return password, nil
 }
 
-func (o *encryptOptions) run(args ...string) error {
-	if o.generatePassword && o.password != "" {
-		return fmt.Errorf("-g and -p cannot be used together")
+func (c *encCmd) run(args ...string) error {
+	if c.generatePassword && c.password != "" {
+		return usageErr("-g and -p cannot be used together")
 	}
-	if len(args) == 0 && !o.generatePassword && o.password == "" {
-		return fmt.Errorf("must use -g or -p when reading from stdin")
+	if len(args) == 0 && !c.generatePassword && c.password == "" {
+		return usageErr("must use -g or -p when reading from stdin")
 	}
 	var password string
-	if o.password != "" {
-		password = o.password
-	} else if o.generatePassword {
+	if c.password != "" {
+		password = c.password
+	} else if c.generatePassword {
 		const nWords = 10
 		buf := make([]byte, 2*nWords)
 		rand.Read(buf)
@@ -140,21 +127,32 @@ func (o *encryptOptions) run(args ...string) error {
 		}
 		password = strings.Join(words, " ")
 		fmt.Fprint(os.Stderr, "Your password: ")
-		fmt.Fprint(o.passwordOut, password)
+		fmt.Fprint(c.passwordOut, password)
 		fmt.Fprintln(os.Stderr)
 	} else {
 		var err error
-		if password, err = o.readPassword(); err != nil {
+		if password, err = c.readPassword(); err != nil {
 			return err
 		}
 	}
 	if len(args) == 0 {
-		return o.encrypt(o.stdout, o.stdin, password)
+		return c.encrypt(c.stdout, c.stdin, password)
 	}
 	for _, fileName := range args {
-		if err := o.encryptFile(fileName, password); err != nil {
+		if err := c.encryptFile(fileName, password); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (c *encCmd) Execute(ctx context.Context, f *flag.FlagSet, _ ...any) subcommands.ExitStatus {
+	if err := c.run(f.Args()...); err != nil {
+		fmt.Fprintf(os.Stderr, "sym: %s\n", err)
+		if errors.Is(err, errUsage) {
+			return subcommands.ExitUsageError
+		}
+		return subcommands.ExitFailure
+	}
+	return subcommands.ExitSuccess
 }

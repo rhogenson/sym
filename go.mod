@@ -3,6 +3,7 @@ module roseh.moe/cmd/sym
 go 1.25.0
 
 require (
+	github.com/google/subcommands v1.2.0
 	golang.org/x/crypto v0.43.0
 	golang.org/x/term v0.36.0
 	roseh.moe/pkg/wordlist v1.0.2

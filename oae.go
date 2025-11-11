@@ -18,7 +18,7 @@ const (
 	segmentSize          = 1024 * 1024
 	plaintextSegmentSize = segmentSize - aeadOverhead
 
-	saltSize = 16
+	saltSize = 32
 )
 
 type segmentEncrypter struct {
