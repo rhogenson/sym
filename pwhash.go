@@ -7,7 +7,7 @@ import (
 	"golang.org/x/term"
 )
 
-var argon2Memory = 64 * 1024
+var argon2Memory = 2 * 1024 * 1024
 
 func hashPassword(password string, salt []byte) []byte {
 	return argon2.IDKey([]byte(password), salt, 1, uint32(argon2Memory), 4, 32)
